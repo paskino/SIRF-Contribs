@@ -987,21 +987,21 @@ def get_save_callback_function(outp_file, num_iter):
         """Save callback function."""
         #completed_iterations = iteration + 1
         completed_iterations = iteration
-        # if completed_iterations % save_interval == 0 or \
-        #         completed_iterations == num_iter:
-        #     print("File should be saved at {}/{}_iters_{}".format(outpath,outp_file, completed_iterations))
-        #     print(os.getcwd())
-        #     if not nifti:
-        #         x.write("{}/{}_iters_{}".format(outpath,outp_file, completed_iterations))
-        #     else:
-        #         reg.NiftiImageData(x).write(
-        #             "{}/{}_iters_{}".format(outpath,outp_file, completed_iterations))
+        if completed_iterations % save_interval == 0 or \
+                completed_iterations == num_iter:
+            # print("File should be saved at {}/{}_iters_{}".format(outpath,outp_file, completed_iterations))
+            # print(os.getcwd())
+            if not nifti:
+                x.write("{}/{}_iters_{}".format(outpath,outp_file, completed_iterations))
+            else:
+                reg.NiftiImageData(x).write(
+                    "{}/{}_iters_{}".format(outpath,outp_file, completed_iterations))
 
-        if not nifti:
-            x.write("{}/{}_iters_{}".format(outpath,outp_file, completed_iterations))
-        else:
-            reg.NiftiImageData(x).write(
-                "{}/{}_iters_{}".format(outpath,outp_file, completed_iterations))
+        # if not nifti:
+        #     x.write("{}/{}_iters_{}".format(outpath,outp_file, completed_iterations))
+        # else:
+        #     reg.NiftiImageData(x).write(
+        #         "{}/{}_iters_{}".format(outpath,outp_file, completed_iterations))
 
     psave_callback = partial(
         save_callback, save_interval, nifti, outpath, outp_file, num_iter)
