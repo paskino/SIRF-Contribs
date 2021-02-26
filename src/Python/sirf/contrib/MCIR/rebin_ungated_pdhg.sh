@@ -57,9 +57,9 @@ cd ${base_result}/${run_name}
 #####   RUN   ##### 
 # epochs=5000
 update_interval=10
-save_interval = 50
+save_interval=50
 
-python PET_MCIR_PD.py                                   \
+python ${script_name}                                   \
 -o ungated_pdhg                                         \
 --algorithm=pdhg                                        \
 -r FGP_TV                                               \
