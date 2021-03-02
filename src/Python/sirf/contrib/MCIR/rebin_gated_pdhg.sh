@@ -26,11 +26,18 @@ while getopts hpa:g:e:i:t: option
  esac
 done
 # base directory
-mcir_dir=/home/vol05/scarf595/MCIR
-work_dir=/work3/cse/synerbi/
+# SCARF
+# mcir_dir=/home/vol05/scarf595/MCIR
+# work_dir=/work3/cse/synerbi/
+# loc_algo=${work_dir}/mcir_build/SIRF-Contribs/src/Python/sirf/contrib/MCIR
+# loc_data=${work_dir}/cardiac_resp
+
+# vishighmem01
+mcir_dir=/home/edo/scratch/code/PETMR/GPUprojector
+work_dir=/home/edo/scratch/Dataset/PETMR/2020MCIR
 loc_data=${work_dir}/cardiac_resp
 # loc_algo=${mcir_dir}/SIRF/examples/Python/PETMR
-loc_algo=${work_dir}/mcir_build/SIRF-Contribs/src/Python/sirf/contrib/MCIR
+loc_algo=${mcir_dir}/SIRF-Contribs/src/Python/sirf/contrib/MCIR
 
 base_result=${work_dir}/results/pdhg
 ##############    RUN NAME    ################
@@ -42,7 +49,7 @@ fi
 
 if [ ${transform} == "None" ]
 then run_name=notrans_rebin_rescaled_gamma_${gamma}_${is_precond}_alpha_${alpha}_gated_pdhg
-else run_name=new_motion_rebin_rescaled_gamma_${gamma}_${is_precond}_alpha_${alpha}_gated_pdhg
+else run_name=new_motion_rescaled_gamma_${gamma}_${is_precond}_alpha_${alpha}_gated_pdhg
 fi
 loc_reco=${base_result}/${run_name}/recons
 loc_param=${base_result}/${run_name}/params
@@ -116,9 +123,10 @@ python ${script_name}                         \
 --dxdy=3.12117                                \
 --nxny=180                                    \
 -s ${save_interval}                           \
---numSegsToCombine=11                         \
---numViewsToCombine=2                         \
 ${precond}                                    \
---numThreads=32 2>&1 > script.log
+--numThreads=15 2>&1 > script.log
 # -T "$loc_data/pet/transf_g*.nii"              \
+# rebin
+# --numSegsToCombine=11                         \
+# --numViewsToCombine=2                         \
 fi

@@ -30,6 +30,8 @@ Options:
   --visualisations                  show visualisations
   --nifti                           save output as nifti
   --gpu                             use GPU projector
+  --niftypet                        use NiftyPET GPU projector, needs to be used together with --gpu
+  --parallelproj                    use Parallelproj GPU projector, needs to be used together with --gpu
   -v <int>, --verbosity=<int>       STIR verbosity [default: 0]
   -s <int>, --save_interval=<int>   save every x iterations [default: 10]
   --descriptive_fname               option to have descriptive filenames
@@ -82,6 +84,7 @@ from glob import glob
 from docopt import docopt
 import matplotlib.pyplot as plt
 import numpy as np
+import sys
 
 from sirf.Utilities import error, show_2D_array, examples_data_path
 import sirf.Reg as reg
@@ -95,8 +98,12 @@ from cil.optimisation.operators import \
 from cil.plugins.ccpi_regularisation.functions import FGP_TV
 from ccpi.filters import regularisers
 from cil.utilities.multiprocessing import NUM_THREADS
+import cProfile
 
 __version__ = '0.1.0'
+
+
+    
 args = docopt(__doc__, version=__version__)
 
 ###########################################################################
@@ -119,7 +126,11 @@ pet.set_max_omp_threads(numThreads)
 if args['--templateAcqData']:
     template_acq_data = pet.AcquisitionData('Siemens_mMR', span=11, max_ring_diff=15, view_mash_factor=1)
 
-
+# for debugging
+# global args
+# pet.AcquisitionData.set_storage_scheme('default')
+# pet.set_verbosity(0)
+# msg_red = pet.MessageRedirector(None, None, None)
 
 def main():
     """Run main function."""
@@ -195,7 +206,8 @@ def main():
     ###########################################################################
 
     algo, num_iter = get_algo(F, G, K, normK, tau, sigma, gamma, use_axpby, prob, outp_file,image)
-
+    print ("algo", algo)
+    print ("num_iter", num_iter)
     ###########################################################################
     # Create save call back function
     ###########################################################################
@@ -205,11 +217,22 @@ def main():
     ###########################################################################
     # Run the reconstruction
     ###########################################################################
-
-    # algo.run(num_iter, verbose=2, print_interval=1, callback=save_callback)
-    algo.run(num_iter, verbose=2, callback=save_callback)
+    import cProfile, pstats, io
+    from pstats import SortKey
+    pr = cProfile.Profile()
+    pr.enable()
     
-
+    cProfile.run('algo.run(num_iter, verbose=2, print_interval=1, callback=save_callback)',
+                  filename='cProfiler.csv')
+    # algo.run(num_iter, verbose=2, print_interval=1, callback=save_callback)
+    # # algo.run(num_iter, verbose=2, callback=save_callback)
+    
+    # ... do something ...
+    pr.disable()
+    s = io.StringIO()
+    sortby = SortKey.CUMULATIVE
+    ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+    ps.dump_stats('pdhg_scaled_operator_2parallelproj.cprof')
 
 
 def get_filenames(trans, sino, attn, rand):
@@ -254,22 +277,22 @@ def read_files(trans_files, sino_files, attn_files, rand_files, trans_type):
         trans = None
     else:
         if trans_type == "tm":
-            trans = [reg.AffineTransformation(file) for file in trans_files]
+            trans = [reg.AffineTransformation(f) for f in trans_files]
         elif trans_type == "disp":
-            trans = [reg.NiftiImageData3DDisplacement(file)
-                     for file in trans_files]
+            trans = [reg.NiftiImageData3DDisplacement(f)
+                     for f in trans_files]
         elif trans_type == "def":
-            trans = [reg.NiftiImageData3DDeformation(file)
-                     for file in trans_files]
+            trans = [reg.NiftiImageData3DDeformation(f)
+                     for f in trans_files]
         else:
             raise error("Unknown transformation type")
 
-    sinos_raw = [pet.AcquisitionData(file) for file in sino_files]
-    attns = [pet.ImageData(file) for file in attn_files]
+    sinos_raw = [pet.AcquisitionData(f) for f in sino_files]
+    attns = [pet.ImageData(f) for f in attn_files]
     
     # fix a problem with the header which doesn't allow
     # to do algebra with randoms and sinogram
-    rands_arr = [pet.AcquisitionData(file).as_array() for file in rand_files]
+    rands_arr = [pet.AcquisitionData(f).as_array() for f in rand_files]
     rands_raw = [ s * 0 for s in sinos_raw ]
     for r,a in zip(rands_raw, rands_arr):
         r.fill(a)
@@ -399,7 +422,8 @@ def set_up_acq_models(num_ms, sinos, rands, resampled_attns, image, use_gpu):
   
 
     if not use_gpu:
-        acq_models = [pet.AcquisitionModelUsingRayTracingMatrix() for k in range(nsub * num_ms)]
+        # acq_models = [pet.AcquisitionModelUsingRayTracingMatrix() for k in range(nsub * num_ms)]
+        acq_models = [pet.AcquisitionModelUsingParallelproj() for k in range(nsub * num_ms)]
     else:
         acq_models = [pet.AcquisitionModelUsingNiftyPET() for k in range(nsub * num_ms)]
         for acq_model in acq_models:
@@ -427,7 +451,8 @@ def set_up_acq_models(num_ms, sinos, rands, resampled_attns, image, use_gpu):
         if resampled_attns:
             s = sinos[ind]
             ra = resampled_attns[ind]
-            am = pet.AcquisitionModelUsingRayTracingMatrix()
+            # am = pet.AcquisitionModelUsingRayTracingMatrix()
+            am = pet.AcquisitionModelUsingParallelproj()
             asm_attn = get_asm_attn(s,ra,am)
 
         # Get ASM dependent on attn and/or norm
@@ -495,7 +520,7 @@ def set_up_reconstructor(use_gpu, num_ms, acq_models, resamplers, masks, sinos, 
     nsub = int(args['--numSubsets']) if args['--numSubsets'] and algo=='spdhg' else 1
     precond = True if args['--precond'] else False
     param_path = str(args['--param_path'])
-    normalise = True if args['--normaliseDataAndBlock'] else False
+    normalise = True if args['--normaliseDataAndBlock'] is not None else False
     gamma = float(args['--gamma'])
     output_name = str(args['--outp'])
     
@@ -545,6 +570,7 @@ def set_up_reconstructor(use_gpu, num_ms, acq_models, resamplers, masks, sinos, 
         r_nonneg = 1
         r_printing = 0
         device = 'gpu' if use_gpu else 'cpu'
+        device = 'gpu'
         G = FGP_TV(r_alpha, r_iters, r_tolerance,
                    r_iso, r_nonneg, r_printing, device)
         if precond:
@@ -575,7 +601,7 @@ def set_up_reconstructor(use_gpu, num_ms, acq_models, resamplers, masks, sinos, 
             # we'll let spdhg do its default implementation
             sigma = None
             tau = None
-        use_axpby = False
+        use_axpby = True
     else:
         normK=None
         if algo == 'pdhg':
@@ -844,7 +870,8 @@ def get_proj_norm(K,param_path):
         normK = float(np.load(file_path, allow_pickle=True))
     else:
         print('Norm file {} does not exist, compute it'.format(file_path))
-        normK = PowerMethod(K)[0]
+        # normK = PowerMethod(K)[0]
+        normK = K.norm()
         # save to file
         np.save(file_path, normK, allow_pickle=True)
     return normK
@@ -858,7 +885,8 @@ def get_proj_normi(K,nsub,param_path):
         normK = np.load(file_path, allow_pickle=True).tolist()
     else: 
         print('Norm file {} does not exist, compute it'.format(file_path))
-        normK = [PowerMethod(Ki)[0] for Ki in K]
+        # normK = [PowerMethod(Ki)[0] for Ki in K]
+        normK = [Ki.norm() for Ki in K]
         # save to file
         np.save(file_path, normK, allow_pickle=True)
     return normK
@@ -938,7 +966,7 @@ def get_algo(F, G, K, normK, tau, sigma, gamma, use_axpby, prob, outp_file,init_
                 operator=K,
                 tau=tau,
                 sigma=sigma, 
-                x_init=init_image,
+                initial=init_image,
                 use_axpby=use_axpby,
                 max_iteration=num_epoch,           
                 update_objective_interval=update_obj_fn_interval,
@@ -956,7 +984,7 @@ def get_algo(F, G, K, normK, tau, sigma, gamma, use_axpby, prob, outp_file,init_
                 tau=tau,
                 sigma=sigma,
                 gamma=gamma,
-                x_init=init_image,
+                initial=init_image,
                 prob=prob,
                 use_axpby=use_axpby,
                 norms=normK,
@@ -1035,4 +1063,53 @@ def get_domain_sirf2cil(domain_sirf):
 
 
 if __name__ == "__main__":
+    loc_data = '/home/edo/scratch/Dataset/PETMR/2020MCIR/cardiac_resp/'
+    args = {}
+   
+           
+    args['-o'] = 'gated_pdhg'
+    args['--algorithm'] = 'pdhg'
+    args['-r'] = 'FGP_TV'
+    args['--outpath'] = '/home/edo/scratch/Dataset/PETMR/2020MCIR/results/pdhg/new_motion_rescaled_gamma_1_noprecond_alpha_3_gated_pdhg/recons'
+    args['--param_path'] = '/home/edo/scratch/Dataset/PETMR/2020MCIR/results/pdhg/new_motion_rescaled_gamma_1_noprecond_alpha_3_gated_pdhg/params'
+    args['-e'] = '1'
+    args['--update_obj_fn_interval'] = 10
+    args['--descriptive_fname'] = True
+    args['-v'] = '0'
+    args['-S'] = loc_data + "pet/EM_g*.hs"
+    args['-R'] = loc_data + "pet/total_background_g*.hs"
+    args['-n'] = loc_data + "pet/NORM.n.hdr"
+    args['-a'] = loc_data + "pet/MU_g*.nii"
+    args['-T'] = loc_data + "pet/transf_g*.nii"
+    args['-t'] = 'def'
+    args['--nifti'] = True
+    args['--alpha'] = '3'
+    args['--gamma'] = '1'
+    args['--dxdy'] ='3.12117'
+    args['--nxny'] = '180'
+    args['-s'] = '50'
+    args['--numThreads'] = '16'
+    args['--gpu'] = False
+
+    args['--trans_type'] = args['-t']
+    args['--trans'] = args['-T']
+    args['--sino'] = args['-S']
+    args['--rand'] = args['-R']
+    args['--norm'] = args['-n']
+    args['--outp'] = args['-o']
+    args['--attn'] = args['-a']
+    args['--verbosity'] = args['-v']
+    args['--save_interval'] = args['-s']
+    
+    args['--numSegsToCombine'] = '11'
+    args['--numViewsToCombine'] = '2'
+    args['--initial'] = False
+    args['--templateAcqData'] = False
+    args['--numSubsets'] = '1'
+    args['--reg'] = 'FGP_TV'
+    args['--reg_iters'] = '100'
+    args['--precond'] = False
+
+    args['--normaliseDataAndBlock'] = None
+
     main()
