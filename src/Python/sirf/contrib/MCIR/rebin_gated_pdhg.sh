@@ -59,7 +59,7 @@ mkdir -p ${base_result}/${run_name}
 cd ${base_result}/${run_name}
 
 # cp ${loc_algo}/PET_MCIR_PD.py ${base_result}/${run_name}
-script_name=PET_recon_file.py
+script_name=PET_recon_file_class.py
 cp ${loc_algo}/${script_name} ${base_result}/${run_name}
 
 cd ${base_result}/${run_name}
@@ -124,7 +124,7 @@ python ${script_name}                         \
 --nxny=180                                    \
 -s ${save_interval}                           \
 ${precond}                                    \
---numThreads=15 2>&1 > script.log
+--numThreads=15 #2>&1 > script.log
 # -T "$loc_data/pet/transf_g*.nii"              \
 # rebin
 # --numSegsToCombine=11                         \
