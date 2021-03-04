@@ -39,7 +39,7 @@ loc_data=${work_dir}/cardiac_resp
 # loc_algo=${mcir_dir}/SIRF/examples/Python/PETMR
 loc_algo=${mcir_dir}/SIRF-Contribs/src/Python/sirf/contrib/MCIR
 
-base_result=${work_dir}/results/pdhg
+base_result=${work_dir}/results/pdhg_cpureg
 ##############    RUN NAME    ################
 if [ "${precond}" = "" ]; then
   is_precond="noprecond"
@@ -99,7 +99,6 @@ python ${script_name}                         \
 --numViewsToCombine=2                         \
 ${precond}                                    \
 --numThreads=32 2>&1 > script.log
-
 else
 python ${script_name}                         \
 -o gated_pdhg                                 \
@@ -124,9 +123,13 @@ python ${script_name}                         \
 --nxny=180                                    \
 -s ${save_interval}                           \
 ${precond}                                    \
---numThreads=15 #2>&1 > script.log
+--StorageSchemeMemory                         \
+--numSegsToCombine=11                         \
+--numViewsToCombine=2                         \
+--numThreads=15 
+fi
+#2>&1 > script.log
 # -T "$loc_data/pet/transf_g*.nii"              \
 # rebin
-# --numSegsToCombine=11                         \
-# --numViewsToCombine=2                         \
-fi
+
+
