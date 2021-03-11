@@ -5,6 +5,7 @@ alpha=5.0
 epochs=200
 transform="pet/transf_g*.nii"
 precond=""
+initial=""
 while getopts hpa:g:e:i:t: option
  do
  case "${option}"
@@ -46,6 +47,13 @@ if [ "${precond}" = "" ]; then
 else
   is_precond="precond"
 fi
+
+if [ "${initial}" = "" ]; then
+  with_initial=""
+else
+  with_initial="--initial ${initial}"
+fi
+
 
 if [ ${transform} == "None" ]
 then run_name=notrans_rebin_rescaled_gamma_${gamma}_${is_precond}_alpha_${alpha}_gated_pdhg
@@ -89,6 +97,7 @@ python ${script_name}                         \
 -R "$loc_data/pet/total_background_g*.hs"     \
 -n "$loc_data/pet/NORM.n.hdr"                 \
 -a "$loc_data/pet/MU_g*.nii"                  \
+${with_initial}                               \
 -t def                                        \
 --nifti                                       \
 --alpha=${alpha}                              \
@@ -115,6 +124,7 @@ python ${script_name}                         \
 -n "$loc_data/pet/NORM.n.hdr"                 \
 -a "$loc_data/pet/MU_g*.nii"                  \
 -T "$loc_data/${transform}"                   \
+${with_initial}                               \
 -t def                                        \
 --nifti                                       \
 --alpha=${alpha}                              \
