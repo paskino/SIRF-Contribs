@@ -514,10 +514,18 @@ class MCIR(object):
             for acq_model in acq_models:
                 acq_model.set_use_truncation(True)
                 acq_model.set_cuda_verbosity(verbosity)
-                acq_model.set_num_tangential_LORs(10)
+                
         else:
             acq_models = [pet.AcquisitionModelUsingRayTracingMatrix() for k in range(nsub * self.num_ms)]
+            for am in acq_models:
+                am.set_num_tangential_LORs(10)
             
+        # apply resolution modelling
+        smoother = pet.SeparableGaussianImageFilter()
+        smoother.set_fwhms((3,2,2))
+        for am in acq_models:
+            am.set_image_data_processor(smoother)
+
         # create masks
         im_one = self.image.clone().allocate(1.)
         masks = []
@@ -1081,6 +1089,10 @@ class MCIR(object):
     def get_from_args(self, keyword):
         return self.args[keyword]
 
+def apply_resolution_modelling(self):
+    smoother = pet.SeparableGaussianImageFilter()
+    smoother.set_fwhms((3,2,2))
+    acq_model.set_image_data_processor(smoother)
 
 
 
