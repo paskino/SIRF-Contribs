@@ -506,8 +506,8 @@ class MCIR(object):
     
         print ("args gpu", self.args['--gpu'])
         if not self.args['--gpu']:
-            # acq_models = [pet.AcquisitionModelUsingRayTracingMatrix() for k in range(nsub * num_ms)]
-            acq_models = [pet.AcquisitionModelUsingParallelproj() for k in range(nsub * self.num_ms)]
+            acq_models = [pet.AcquisitionModelUsingRayTracingMatrix() for k in range(nsub * self.num_ms)]
+            #acq_models = [pet.AcquisitionModelUsingParallelproj() for k in range(nsub * self.num_ms)]
         else:
             acq_models = [pet.AcquisitionModelUsingNiftyPET() for k in range(nsub * self.num_ms)]
             for acq_model in acq_models:
@@ -536,8 +536,8 @@ class MCIR(object):
             if self.resampled_attns is not None: 
                 s = self.sinos[ind]
                 ra = self.resampled_attns[ind]
-                # am = pet.AcquisitionModelUsingRayTracingMatrix()
-                am = pet.AcquisitionModelUsingParallelproj()
+                am = pet.AcquisitionModelUsingRayTracingMatrix()
+                # am = pet.AcquisitionModelUsingParallelproj()
                 asm_attn = self.get_asm_attn(s,ra,am)
 
             # Get ASM dependent on attn and/or norm

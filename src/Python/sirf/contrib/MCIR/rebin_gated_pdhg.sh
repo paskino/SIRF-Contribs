@@ -5,7 +5,9 @@ alpha=5.0
 epochs=200
 transform="pet/transf_g*.nii"
 precond=""
-while getopts hpa:g:e:i:t: option
+rebin_views=""
+rebin_segs=""
+while getopts hpra:g:e:i:t: option
  do
  case "${option}"
  in
@@ -15,6 +17,7 @@ while getopts hpa:g:e:i:t: option
   i) initial=${OPTARG};;
   t) transform=${OPTARG};;
   p) precond="--precond";;
+  r) rebin_segs="--numSegsToCombine=11"; rebin_views="--numViewsToCombine=2" ;;
   h)
    echo "Usage: $0 -a alpha -g gamma -e epochs"
    exit 
@@ -27,19 +30,19 @@ while getopts hpa:g:e:i:t: option
 done
 # base directory
 # SCARF
-# mcir_dir=/home/vol05/scarf595/MCIR
-# work_dir=/work3/cse/synerbi/
-# loc_algo=${work_dir}/mcir_build/SIRF-Contribs/src/Python/sirf/contrib/MCIR
-# loc_data=${work_dir}/cardiac_resp
+mcir_dir=/home/vol05/scarf595/MCIR
+work_dir=/work3/cse/synerbi/
+loc_algo=${work_dir}/mcir_build/SIRF-Contribs/src/Python/sirf/contrib/MCIR
+loc_data=${work_dir}/cardiac_resp
 
 # vishighmem01
-mcir_dir=/home/edo/scratch/code/PETMR/GPUprojector
-work_dir=/home/edo/scratch/Dataset/PETMR/2020MCIR
-loc_data=${work_dir}/cardiac_resp
+#mcir_dir=/home/edo/scratch/code/PETMR/GPUprojector
+#work_dir=/home/edo/scratch/Dataset/PETMR/2020MCIR
+# loc_data=${work_dir}/cardiac_resp
 # loc_algo=${mcir_dir}/SIRF/examples/Python/PETMR
-loc_algo=${mcir_dir}/SIRF-Contribs/src/Python/sirf/contrib/MCIR
+# loc_algo=${mcir_dir}/SIRF-Contribs/src/Python/sirf/contrib/MCIR
 
-base_result=${work_dir}/results/pdhg_cpureg
+base_result=${work_dir}/results/pdhg_norebin/
 ##############    RUN NAME    ################
 if [ "${precond}" = "" ]; then
   is_precond="noprecond"
@@ -70,8 +73,8 @@ cd ${base_result}/${run_name}
 #epochs=2
 #update_interval=48      
 #####   RUN   ##### 
-update_interval=10
-save_interval=50
+update_interval=50
+save_interval=200
                        
 if [ ${transform} == "None" ]
 then 
@@ -95,8 +98,8 @@ python ${script_name}                         \
 --gamma=${gamma}                              \
 --dxdy=3.12117                                \
 --nxny=180                                    \
---numSegsToCombine=11                         \
---numViewsToCombine=2                         \
+${rebin_segs}                                 \
+${rebin_views}                                \
 ${precond}                                    \
 --numThreads=32 2>&1 > script.log
 else
@@ -123,13 +126,11 @@ python ${script_name}                         \
 --nxny=180                                    \
 -s ${save_interval}                           \
 ${precond}                                    \
+${rebin_segs}                                 \
+${rebin_views}                                \
 --StorageSchemeMemory                         \
---numSegsToCombine=11                         \
---numViewsToCombine=2                         \
---numThreads=15 
+--numThreads=32 
 fi
-#2>&1 > script.log
-# -T "$loc_data/pet/transf_g*.nii"              \
-# rebin
+
 
 
