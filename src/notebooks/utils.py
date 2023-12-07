@@ -132,6 +132,24 @@ class AcquisitionModel(pMR.AcquisitionModel):
         return pMR.AcquisitionModel.norm(self)
     
 
+
+class MRAcquisitionModelWithNormCache(pMR.AcquisitionModel):
+
+    def __init__(self, acqs, imgs):
+        
+        self._norm = None
+        super().__init__(acqs, imgs)
+
+    def norm(self):
+        if self._norm is not None:
+            return self._norm
+        self._norm = self.calculate_norm()
+        return self._norm
+
+    def calculate_norm(self):
+        return pMR.AcquisitionModel.norm(self)
+
+
 def create_AcquisitionModel_for_each_motion_state(acq_ms, csm):            
     Nms = len(acq_ms)
     E_ms = [0] * Nms
@@ -142,7 +160,19 @@ def create_AcquisitionModel_for_each_motion_state(acq_ms, csm):
         E_tmp.set_coil_sensitivity_maps(csm)
         im_ms = E_tmp.inverse(acq_ms[ind])
 
-        E_ms[ind] = pMR.AcquisitionModel(acqs=acq_ms[ind], imgs=im_ms)
+        # E_ms[ind] = pMR.AcquisitionModel(acqs=acq_ms[ind], imgs=im_ms)
+        E_ms[ind] = MRAcquisitionModelWithNormCache(acqs=acq_ms[ind], imgs=im_ms)
+        
         E_ms[ind].set_coil_sensitivity_maps(csm)
 
     return E_ms
+
+
+def save_itrobj(algo, data_path, recons, Nms):
+    '''Save iterations and objective function values for algorithm'''
+    itrobj = [algo.iterations, algo.objective]
+    itrobj[0][0] = 0
+    print(itrobj)
+    fname = os.path.join(data_path, recons, f'MS_{Nms}', '{}_itrobj.npy'.format(algo.__class__.__name__))
+    print (fname)
+    np.save(fname, np.asarray(itrobj))
