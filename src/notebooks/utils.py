@@ -43,22 +43,33 @@ def plot_rpe_3d(dat, sl_idx, lbl, limits, title=None, size=None, save_dir="/home
         if title is not None:
             fig.savefig(os.path.join(save_dir, title))
 
-def plot_rpe_3d_simple(dat, sl_idx, lbl, fig_name=None, ax=None):
+def plot_rpe_3d_simple(dat, sl_idx, lbl, fig_name=None, ax=None, cmap='gray', wspace=-.32, hspace=0.02):
     if ax is None:
-        fig, ax = plt.subplots(2,len(dat), squeeze=False, figsize=(10,5))
+        fig, ax = plt.subplots(2,len(dat), squeeze=True, figsize=(10,5), gridspec_kw={'wspace':wspace, 'hspace':hspace})
     for ind in range(len(dat)):
-        ax[0,ind].imshow(np.rot90(np.abs(dat[ind][:, sl_idx[0], :]), 1))
+        ax[0,ind].imshow(np.rot90(np.abs(dat[ind][:, sl_idx[0], :]), 1), cmap=cmap)
         ax[0,ind].set_xticks([])
         ax[0,ind].set_yticks([])
-        ax[0,ind].set_ylabel('Foot-Head')
-        ax[0,ind].set_xlabel('Right-Left')
+        
         ax[0,ind].set_title(lbl[ind])
         
-        ax[1,ind].imshow(np.rot90(np.abs(dat[ind][:, :, sl_idx[1]])))
+        sp = ax[1,ind].imshow(np.rot90(np.abs(dat[ind][:, :, sl_idx[1]])), cmap=cmap)
         ax[1,ind].set_xticks([])
         ax[1,ind].set_yticks([])
-        ax[1,ind].set_ylabel('Anterior-Posterior')
+        
+
+    # set ylabels
+    ind = 0
+    ax[0,ind].set_ylabel('Foot-Head')
+    ax[1,ind].set_ylabel('Anterior-Posterior')
+        
+    # set xlabels:
+    for ind in range (len(dat)):
         ax[1,ind].set_xlabel('Right-Left')
+
+    plt.tight_layout()
+    # plt.colorbar(sp, orientation='vertical', shrink=1, anchor=(0.0, 0.) )
+    
     if fig_name is not None:
         plt.savefig('{}.png'.format(fig_name))
 
