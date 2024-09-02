@@ -108,7 +108,8 @@ def saveCallback(algo, prefix, save_dir, iteration, objective, solution):
                 pass
             
             solution.write(os.path.join(save_dir, f'{prefix}_it_{iteration:003}.h5'))
-        
+
+
             
 ### MR Data preparation
 
@@ -213,3 +214,44 @@ def save_itrobj(algo, data_path, recons, Nms):
     fname = os.path.join(data_path, recons, f'MS_{Nms}', '{}_itrobj.npy'.format(algo.__class__.__name__))
     print (fname)
     np.save(fname, np.asarray(itrobj))
+
+
+import cil
+from packaging.version import Version
+
+if Version(f"{cil.version.major}.{cil.version.minor}.{cil.version.patch}") >= Version("24.0.0"):
+    from cil.optimisation.utilities.callbacks import Callback
+
+    class SaveCallback(Callback):
+        def __init__(self, save_interval, save_dir, prefix):
+            self._save_interval = save_interval
+            self.save_dir = save_dir
+            self.prefix = prefix
+            try:
+                os.makedirs(self.save_dir)
+            except FileExistsError:
+                pass
+        @property
+        def save_interval(self):
+            return self._save_interval
+            
+        def set_save_interval(self, value):
+            if isinstance(value, Integral):
+                if value < 0:
+                    raise ValueError("Expected positive integer or 0. Got {value}")
+                self._save_interval = value
+
+        def __call__(self, algorithm):
+            if algorithm.iteration > 0 and (algorithm.iteration % self.save_interval == 0):            
+                algorithm.solution.write(os.path.join(self.save_dir, f'{self.prefix}_it_{algorithm.iteration:003}.h5'))
+
+
+    class SaveObjectiveCallback(SaveCallback):
+
+        def __call__(self, algorithm):
+            if algorithm.iteration > 0 and (algorithm.iteration % algorithm.update_objective_interval == 0):            
+                itrobj = [algorithm.iterations, algorithm.objective]
+                # print(itrobj)
+                fname = os.path.join(self.save_dir, '{}_itrobj.npy'.format(algorithm.__class__.__name__))
+                # print (fname)
+                np.save(fname, np.asarray(itrobj))
