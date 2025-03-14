@@ -221,6 +221,7 @@ from packaging.version import Version
 
 if Version(f"{cil.version.major}.{cil.version.minor}.{cil.version.patch}") >= Version("24.0.0"):
     from cil.optimisation.utilities.callbacks import Callback
+    from numbers import Integral
 
     class SaveCallback(Callback):
         def __init__(self, save_interval, save_dir, prefix):
@@ -252,6 +253,15 @@ if Version(f"{cil.version.major}.{cil.version.minor}.{cil.version.patch}") >= Ve
             if algorithm.iteration > 0 and (algorithm.iteration % algorithm.update_objective_interval == 0):            
                 itrobj = [algorithm.iterations, algorithm.objective]
                 # print(itrobj)
-                fname = os.path.join(self.save_dir, '{}_itrobj.npy'.format(algorithm.__class__.__name__))
+                if self.prefix is not None:
+                    fname = '{}_{}_itrobj.npy'.format(
+                        self.prefix,
+                        algorithm.__class__.__name__
+                    )
+                else:
+                    fname = '{}_itrobj.npy'.format(
+                        algorithm.__class__.__name__
+                    )
+                fname = os.path.join(self.save_dir, fname)
                 # print (fname)
                 np.save(fname, np.asarray(itrobj))
