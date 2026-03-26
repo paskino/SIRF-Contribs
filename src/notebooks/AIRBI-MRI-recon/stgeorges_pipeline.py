@@ -3,6 +3,7 @@ import os
 import logging
 
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 # https://discord.com/channels/1242028164105109574/1481253905852792962/1481263393733087345
 command = "siemens_to_ismrmrd"
@@ -16,6 +17,7 @@ input_files = [ "meas_MID00613_FID129151_CONVENTIONAL_RECON_SEQD_GF2_AX_RL.dat",
 ]
 
 for fname in input_files:
+    logger.info(f"Processing file {fname}...")
     file_in = os.path.join(data_dir, fname)
     file_out = os.path.join(proc_dir, os.path.basename(file_in).replace(".dat", ".h5"))
     if os.path.exists(file_out):
