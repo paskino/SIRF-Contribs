@@ -90,6 +90,7 @@ def to_dicom_folder(
     # Dataset
     dataset = pydicom.Dataset()
     dataset.file_meta = file_meta
+    studyInstanceUID = pydicom.uid.generate_uid()
 
     dataset.PatientName = "Unknown"
     dataset.PatientID = "Unknown"
@@ -129,6 +130,13 @@ def to_dicom_folder(
                 photometric_interpretation="MONOCHROME2",
                 bits_stored=16,
             )
+            
+            # Ensure required fields are set (set_pixel_data may have cleared them)
+            dataset.SOPInstanceUID = pydicom.uid.generate_uid()
+            dataset.PatientName = "Unknown"
+            dataset.PatientID = "Unknown"
+            dataset.StudyInstanceUID = studyInstanceUID
+            
             dataset.save_as(
                 foldername
                 / f"{filename_prefix}_{str(np.prod(file_index) * number_of_frames + frame).zfill(4)}.dcm",
