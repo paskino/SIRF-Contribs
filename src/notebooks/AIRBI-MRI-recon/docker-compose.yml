@@ -6,7 +6,7 @@ services:
     # ports:
     #   - "8888:8888"
     volumes:
-      - ./workdir:/home/jovyan/work
+      - /home/ubuntu/workdir:/home/jovyan/work
       - /mnt/share-private/materials:/mnt/materials
       - /mnt/share-private/materials/SIRF2/person/:/input
       - /home/ubuntu/workdir/recons:/output

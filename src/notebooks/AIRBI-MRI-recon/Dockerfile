@@ -1,4 +1,4 @@
-FROM ghcr.io/synerbi/sirf:edge
+FROM synerbi/sirf:devel-gpu
 
 USER jovyan
 RUN pip install pydicom
