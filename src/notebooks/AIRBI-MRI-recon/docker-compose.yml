@@ -1,8 +1,9 @@
 services:
   sirf-mri-recon:
     build: . # Use the Dockerfile in the current directory
-    container_name: sirf-mri-recon
-    user: "${UID}:${GID}"
+    container_name: compose-sirf-mri-recon
+    user: "1000:1000" # Set the user to match the host user (replace with your UID:GID)
+    group_add: [users] 
     # ports:
     #   - "8888:8888"
     volumes:
