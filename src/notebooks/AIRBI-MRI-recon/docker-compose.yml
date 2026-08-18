@@ -4,12 +4,12 @@ services:
     container_name: compose-sirf-mri-recon
     user: "1000:1000" # Set the user to match the host user (replace with your UID:GID)
     group_add: [users] 
-    # ports:
-    #   - "8888:8888"
+    ports:
+      - "8888:8888"
     volumes:
       - /home/ubuntu/workdir:/home/jovyan/work
       - /mnt/share-private/materials:/mnt/materials
-      - /mnt/share-private/materials/SIRF2/person/:/input
+      - /mnt/share-private/SyneRBI/Project5:/input
       - /home/ubuntu/workdir/recons:/output
     # deploy: { resources: { reservations: { devices: [ {driver: nvidia, count: all, capabilities: [gpu] } ] } } }
     stdin_open: true
