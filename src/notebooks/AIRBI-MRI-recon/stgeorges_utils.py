@@ -3,7 +3,7 @@ import os
 from sirf.Gadgetron import ImageData
 from cil.optimisation.utilities.callbacks import Callback
 
-def change_ismrmrd(full_filename_in, full_filename_out, matrixSizeY=None):
+def change_ismrmrd(full_filename_in, full_filename_out):
     if full_filename_in == full_filename_out:
         raise ValueError('Input and output filename are the same. This would overwrite the original data.')
 
@@ -18,10 +18,10 @@ def change_ismrmrd(full_filename_in, full_filename_out, matrixSizeY=None):
         acquisitions = ds.acquisitions[:]
 
     # Modify header
-    if matrixSizeY is None:
-        # modify the encoded y size with the recon size y
-        matrixSizeY = ismrmrd_header.encoding[0].reconSpace.matrixSize.y
+    matrixSizeY = min(ismrmrd_header.encoding[0].encodedSpace.matrixSize.y,  ismrmrd_header.encoding[0].reconSpace.matrixSize.y)
+    matrixSizeY = max(matrixSizeY, ismrmrd_header.encoding[0].encodingLimits.kspace_encoding_step_1.maximum+1)
     ismrmrd_header.encoding[0].encodedSpace.matrixSize.y = matrixSizeY
+    ismrmrd_header.encoding[0].reconSpace.matrixSize.y = matrixSizeY
 
     # Create new file
     # https://github.com/ismrmrd/ismrmrd-python/blob/d55eed97e266e8a1339777379a1350a39c377c50/ismrmrd/hdf5.py#L165
@@ -30,6 +30,7 @@ def change_ismrmrd(full_filename_in, full_filename_out, matrixSizeY=None):
 
         for acq in acquisitions:
             ds.append_acquisition(acq)
+
     
 
 
