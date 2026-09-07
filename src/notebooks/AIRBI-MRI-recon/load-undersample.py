@@ -165,15 +165,20 @@ am['us']['data'] = acq_data_us
 
 from cil.optimisation.utilities.callbacks import Callback, ProgressCallback
 class LogAll(Callback):
-    def __init__(self, interval=1):
+    def __init__(self, interval=1, plot=False):
         self.interval = interval
         self.iteration = []
         self.iterates = []
+        self.plot = plot
 
     def __call__(self, solver):
         if solver.iteration % self.interval == 0:
             self.iteration.append(solver.iteration)
             self.iterates.append(solver.solution.copy())
+            if self.plot:
+                show2D(np.squeeze(
+                    np.abs(solver.solution.asarray()[11,110:410, 80:380])
+                    ).T)
 
 logall = LogAll()
 
@@ -191,7 +196,7 @@ for k,v in am.items():
     f = LeastSquares(E, acq_data, c=1)
 
     alpha = 0.3
-    TV = FGP_TV(alpha=alpha, nonnegativity=False, device='cpu')
+    TV = FGP_TV(alpha=alpha, nonnegativity=False, device='gpu')
     G = TV
 
     # add logger callback to FISTA
@@ -219,5 +224,47 @@ show2D(
 )
 #%%
 import matplotlib.pyplot as plt
-plt.plot(fista.loss)
+i = 0
+for k,v in am.items():
+    plt.semilogy(v['algo'].loss[1:])
+    i += num_iterations
+
+# %%
+#AI
+which = 'us'
+E = am[which]['am']
+acq_data = am[which]['data']
+x_init = E.inverse(acq_data)
+
+f = LeastSquares(E, acq_data, c=1)
+
+alpha = 3e-6
+TV = FGP_TV(alpha=alpha, nonnegativity=False, device='cpu')
+G = TV
+
+# add logger callback to FISTA
+
+
+# Set up FISTA
+fista = FISTA(initial=x_init.fill(0), f=f, g=G)
+fista.update_objective_interval = 1
+
+# Run FISTA for least squares
+num_iterations = 5
+log_us = LogAll(plot=True)
+fista.run(num_iterations, callbacks=[ProgressCallback(), log_us])
+
+#%%
+show2D(np.squeeze(np.abs(log_us.iterates[5].asarray()[11,110:410, 80:380])).T)
+
+# %%
+from sirf.Gadgetron import FullySampledReconstructor
+which = "fs"
+acq_data = am[which]['data']
+recon = FullySampledReconstructor()
+recon.set_input(acq_data)
+recon.process()
+x_recon = recon.get_output()
+#%%
+show2D(np.squeeze(np.abs(x_recon.asarray()[11,110:410, 80:380])).T)
 # %%
