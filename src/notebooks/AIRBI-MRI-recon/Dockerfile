@@ -12,7 +12,7 @@ COPY --chown=jovyan:users mr_recon.sh /home/jovyan/recon_scripts/
 COPY --chown=jovyan:users stgeorges_pipeline.py /home/jovyan/recon_scripts/
 COPY --chown=jovyan:users stgeorges_utils.py /home/jovyan/recon_scripts/
 
-WORKDIR /home/jovyan/recon_scripts
+WORKDIR /home/jovyan/work
 
-CMD ["bash" , "mr_recon.sh"]
+# CMD ["bash" , "mr_recon.sh"]
 # CMD ["id", "-a"]
