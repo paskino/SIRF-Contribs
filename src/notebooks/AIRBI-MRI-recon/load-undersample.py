@@ -158,3 +158,66 @@ plot_kspace_lines_memory([am['fs']['data'], am['ai']['data'], acq_data_us], None
                         #  np.max(ky_index))
 
 # %%
+E, csm = get_AcquisitionModel_CSM(acq_data_us)
+am['us'] = {'am': E, 'csm': csm}
+am['us']['data'] = acq_data_us
+#%%
+
+from cil.optimisation.utilities.callbacks import Callback, ProgressCallback
+class LogAll(Callback):
+    def __init__(self, interval=1):
+        self.interval = interval
+        self.iteration = []
+        self.iterates = []
+
+    def __call__(self, solver):
+        if solver.iteration % self.interval == 0:
+            self.iteration.append(solver.iteration)
+            self.iterates.append(solver.solution.copy())
+
+logall = LogAll()
+
+
+
+#%%
+# Define our objective/loss function as least squares between Ex and y
+
+for k,v in am.items():
+    logger.info(f"Processing {k}")
+    E = v['am']
+    acq_data = v['data']
+    x_init = E.inverse(acq_data)
+    x_init *= 0
+    f = LeastSquares(E, acq_data, c=1)
+
+    alpha = 0.3
+    TV = FGP_TV(alpha=alpha, nonnegativity=False, device='cpu')
+    G = TV
+
+    # add logger callback to FISTA
+
+
+    # Set up FISTA
+    fista = FISTA(initial=x_init, f=f, g=G)
+    fista.update_objective_interval = 1
+    v['algo'] = fista
+
+    # Run FISTA for least squares
+    num_iterations = 10
+    fista.run(num_iterations, callbacks=[ProgressCallback(), logall])
+    
+
+# %%
+from cil.utilities.display import show2D
+
+show2D(
+    [np.abs(v['recon'].asarray()) for k,v in am.items()],
+    title=[k for k in am.keys()],
+    num_cols=3,
+    slice_list=(0,6)
+
+)
+#%%
+import matplotlib.pyplot as plt
+plt.plot(fista.loss)
+# %%
