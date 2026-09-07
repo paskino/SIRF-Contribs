@@ -153,7 +153,8 @@ import stgeorges_utils
 import importlib
 importlib.reload(stgeorges_utils)
 from stgeorges_utils import plot_kspace_lines_memory
-acq_data_us = create_gaussian_variable_density_kspace_data(am['fs']['data'])
+acq_data_us = create_gaussian_variable_density_kspace_data(am['fs']['data'],
+                                                           acceleration_factor=3.5)
 plot_kspace_lines_memory([am['fs']['data'], am['ai']['data'], acq_data_us], None)
                         #  np.max(ky_index))
 
@@ -174,11 +175,12 @@ class LogAll(Callback):
     def __call__(self, solver):
         if solver.iteration % self.interval == 0:
             self.iteration.append(solver.iteration)
-            self.iterates.append(solver.solution.copy())
-            if self.plot:
-                show2D(np.squeeze(
+            dslice = np.squeeze(
                     np.abs(solver.solution.asarray()[11,110:410, 80:380])
-                    ).T)
+                    ).T
+            self.iterates.append(dslice)
+            if self.plot:
+                show2D(dslice)
 
 logall = LogAll()
 
@@ -208,7 +210,7 @@ for k,v in am.items():
     v['algo'] = fista
 
     # Run FISTA for least squares
-    num_iterations = 10
+    num_iterations = 70
     fista.run(num_iterations, callbacks=[ProgressCallback(), logall])
     
 
@@ -250,9 +252,21 @@ fista = FISTA(initial=x_init.fill(0), f=f, g=G)
 fista.update_objective_interval = 1
 
 # Run FISTA for least squares
-num_iterations = 5
+num_iterations = 70
 log_us = LogAll(plot=True)
-fista.run(num_iterations, callbacks=[ProgressCallback(), log_us])
+# fista.run(num_iterations, callbacks=[ProgressCallback(), log_us])
+fista.run(num_iterations)
+
+#%%
+plt.semilogy(fista.loss[1:])
+#%%
+objective = fista.loss[1:]
+solution = fista.solution.copy()
+for i in range(5):
+    fista = FISTA(initial=solution, f=f, g=G)
+    fista.run(num_iterations)
+    objective.extend(fista.loss[1:])
+    solution = fista.solution.copy()
 
 #%%
 show2D(np.squeeze(np.abs(log_us.iterates[5].asarray()[11,110:410, 80:380])).T)
@@ -267,4 +281,7 @@ recon.process()
 x_recon = recon.get_output()
 #%%
 show2D(np.squeeze(np.abs(x_recon.asarray()[11,110:410, 80:380])).T)
+# %%
+show2D([np.squeeze(np.abs(el.asarray()[11,110:410, 80:380])).T for el in [x_recon, fista.solution]],
+       title=['Fully Sampled', f'Undersampled LS+{alpha}TV'])
 # %%
