@@ -433,3 +433,68 @@ class LogfileCallback(Callback):
         if self.verbose and algorithm.iteration % algorithm.update_objective_interval == 0:
             with open(self.log_file, "a") as f:
                 f.write(f"Iteration {iteration}: objective value = {objective_value}\n")
+
+
+from collections.abc import Sequence
+def gaussian_variable_density_samples(
+        shape: Sequence[int], low: int, high: int, fwhm: float = float('inf'), always_sample: Sequence[int] = ()
+    ) -> np.ndarray:
+        """Generate Gaussian variable density samples.
+        Generates indices in [low, high[ with a gaussian weighting.
+        Parameters
+        ----------
+        shape
+            Shape of the output tensor. The generated indices are 1D and in the last dimension.
+            All other dimensions are batch dimensions.
+        low
+            Lower bound of the sampling domain.
+        high
+            Upper bound of the sampling domain.
+        fwhm
+            Full-width at half-maximum of the Gaussian.
+        always_sample
+            indices that should always included in the samples.
+            For example, `range(-n_center//2, n_center//2)`
+        Returns
+        -------
+            1D array of selected indices.
+        """
+        *n_batch, n_samples = shape
+        if n_samples > high - low:
+            raise ValueError('n_samples must be <= (high - low)')
+        n_random = n_samples - len(always_sample)
+        if n_random < 0:
+            raise ValueError('more always sampled points requested than total number of samples')
+        elif n_random == 0:
+            return np.sort(np.broadcast_to(np.array(always_sample), (*n_batch, -1)))
+
+        pdf = np.exp(-np.log(2.0) * (2 * np.arange(low, high) / fwhm) ** 2)
+        pdf[[x - low for x in always_sample]] = 0
+
+        if len(shape) > 1:
+            pdf_batch = np.broadcast_to(pdf, (*n_batch, len(pdf))).reshape(-1, len(pdf))
+            # normalize each row to a valid probability distribution
+            pdf_batch = pdf_batch / pdf_batch.sum(axis=-1, keepdims=True)
+            idx_rand = np.array([
+                np.random.default_rng().choice(len(pdf), size=n_random, replace=False, p=row) + low
+                for row in pdf_batch
+            ]).reshape(*n_batch, n_random)
+        else:
+            pdf = pdf / pdf.sum()
+            idx_rand = np.random.default_rng().choice(len(pdf), size=n_random, replace=False, p=pdf) + low
+
+        idx_always = np.broadcast_to(np.array(always_sample), (*n_batch, len(always_sample)))
+        return np.sort(np.concatenate([idx_rand, idx_always], axis=-1), axis=-1)
+
+
+def plot_kspace_lines_memory(imgs):
+    # Visualise images
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(1,len(imgs))
+    for idx, acq_data in enumerate(imgs):
+        ky_index = np.unique(acq_data.get_ISMRMRD_info('kspace_encode_step_1'))
+        sampling_mask = np.zeros((np.max(ky_index)+1,np.max(ky_index)+1))
+        sampling_mask[ky_index,:] = 1
+        n_slices = np.unique(acq_data.get_ISMRMRD_info('slice'))
+        ax[idx].imshow(sampling_mask, vmin=0, vmax=1)
+     
