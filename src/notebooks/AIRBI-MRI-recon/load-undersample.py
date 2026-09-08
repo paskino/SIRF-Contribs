@@ -7,6 +7,7 @@ import numpy as np
 import sys
 sys.path.append("/home/jovyan/work/SIRF-Contribs/src/notebooks/AIRBI-MRI-recon/")
 from stgeorges_utils import change_ismrmrd, to_dicom_folder, LogfileCallback
+from stgeorges_utils import plot_kspace_lines_memory
 
 from sirf.Gadgetron import AcquisitionData, ImageData
 from sirf.Gadgetron import AcquisitionModel
@@ -22,10 +23,13 @@ from cil.plugins.ccpi_regularisation.functions import FGP_TV
 from cil.framework import DataContainer as cilDataContainer
 from cil.optimisation.operators import LinearOperator
 from cil.optimisation.utilities.callbacks import ProgressCallback, TextProgressCallback
+from cil.utilities.display import show2D
 import tempfile
 
 from cil.optimisation.functions import L1Sparsity
 from cil.optimisation.operators import WaveletOperator
+
+from stgeorges_utils import rmse
 # from AbsFunction import FunctionOfAbs
 
 #%%
@@ -68,11 +72,27 @@ for fname in input_files:
     output_files.append(file_out_mod)
 
 #%%
-
+# store all data in a dictionary
+am = {}
+#%%
 # Fully sampled dataset
 ad_fs = AcquisitionData(output_files[0])
 ad_fs = preprocess_acquisition_data(ad_fs)
+am['fs'] = {'am': None, 'csm': None}
+am['fs']['data'] = ad_fs
+# %%
+from sirf.Gadgetron import FullySampledReconstructor
+which = "fs"
+acq_data = am[which]['data']
+recon = FullySampledReconstructor()
+recon.set_input(acq_data)
+recon.process()
+x_recon = recon.get_output()
 
+reference_rmse = np.sqrt(np.mean(x_recon.asarray()*x_recon.asarray()))
+#%%
+
+show2D(np.squeeze(np.abs(x_recon.asarray()[11,110:410, 80:380])).T)
 #%%
 # AI protocol
 ad_ai = AcquisitionData(output_files[1])
@@ -117,12 +137,6 @@ def get_AcquisitionModel_CSM(acq_data, smoothness=100):
     return E, csm
 
 #%%
-am = {}
-E, csm = get_AcquisitionModel_CSM(ad_fs)
-am['fs'] = {'am': E, 'csm': csm}
-am['fs']['data'] = ad_fs
-# logger.info(f"Norm of E: {norm}")
-# %%
 E, csm = get_AcquisitionModel_CSM(ad_ai)
 am['ai'] = {'am': E, 'csm': csm}
 # am['ai']['norm'] = am['ai']['am'].norm()
@@ -131,7 +145,6 @@ am['ai']['data'] = ad_ai
 # %%
 # Undersample fully sample data with Gaussian variable density 
 
-# %%
 # Create undersampled data
 def create_gaussian_variable_density_kspace_data(acq_data, acceleration_factor=3.5):
     from stgeorges_utils import gaussian_variable_density_samples
@@ -166,10 +179,13 @@ am['us']['data'] = acq_data_us
 
 from cil.optimisation.utilities.callbacks import Callback, ProgressCallback
 class LogAll(Callback):
-    def __init__(self, interval=1, plot=False):
+    def __init__(self, interval=1, rmse_reference=None, rmse_border=20, plot=False):
         self.interval = interval
         self.iteration = []
         self.iterates = []
+        self.rmse = []
+        self.reference = rmse_reference
+        self.rmse_border = rmse_border
         self.plot = plot
 
     def __call__(self, solver):
@@ -179,17 +195,36 @@ class LogAll(Callback):
                     np.abs(solver.solution.asarray()[11,110:410, 80:380])
                     ).T
             self.iterates.append(dslice)
+            if self.reference is not None:
+                self.rmse.append(
+                    rmse(solver.solution.asarray(), 
+                         self.reference.asarray(), 
+                         border=self.rmse_border)
+                )
             if self.plot:
                 show2D(dslice)
 
-logall = LogAll()
+logall = LogAll(rmse_reference=x_recon.asarray(), plot=True)
 
 
+
+#%%
+# define alphas for TV regularisation. Apparently the scale of the data
+# in the AI and FullySampled data, hence undersampled, are not the same, 
+# leading to a complete different scale of the reconstructed image and 
+# reconstruction parameter
+
+am['fs']['alpha'] = 3e-6
+am['ai']['alpha'] = 3e-1
+am['us']['alpha'] = 3e-6
 
 #%%
 # Define our objective/loss function as least squares between Ex and y
 
 for k,v in am.items():
+    if k in ['fs', 'ai']:
+        logger.info(f"Skipping {k}")
+        continue
     logger.info(f"Processing {k}")
     E = v['am']
     acq_data = v['data']
@@ -197,8 +232,8 @@ for k,v in am.items():
     x_init *= 0
     f = LeastSquares(E, acq_data, c=1)
 
-    alpha = 0.3
-    TV = FGP_TV(alpha=alpha, nonnegativity=False, device='gpu')
+    alpha = v['alpha']
+    TV = FGP_TV(alpha=alpha, nonnegativity=False, device='cpu', max_iteration=500)
     G = TV
 
     # add logger callback to FISTA
@@ -210,7 +245,7 @@ for k,v in am.items():
     v['algo'] = fista
 
     # Run FISTA for least squares
-    num_iterations = 70
+    num_iterations = 10
     fista.run(num_iterations, callbacks=[ProgressCallback(), logall])
     
 
@@ -241,7 +276,7 @@ x_init = E.inverse(acq_data)
 f = LeastSquares(E, acq_data, c=1)
 
 alpha = 3e-6
-TV = FGP_TV(alpha=alpha, nonnegativity=False, device='cpu')
+TV = FGP_TV(alpha=alpha, nonnegativity=False, device='cpu', max_iteration=500)
 G = TV
 
 # add logger callback to FISTA
@@ -271,17 +306,16 @@ for i in range(5):
 #%%
 show2D(np.squeeze(np.abs(log_us.iterates[5].asarray()[11,110:410, 80:380])).T)
 
-# %%
-from sirf.Gadgetron import FullySampledReconstructor
-which = "fs"
-acq_data = am[which]['data']
-recon = FullySampledReconstructor()
-recon.set_input(acq_data)
-recon.process()
-x_recon = recon.get_output()
 #%%
-show2D(np.squeeze(np.abs(x_recon.asarray()[11,110:410, 80:380])).T)
+# Load Original Siemens AI reconstruction
+# Data loaded from DICOM files, exported by Slicer3D as NIfTI file
+
+siemens_ai_recon_fname = "/input/recon_MID00614_FID129152_CONVENTIONAL_RECON_SEQD_GF2_AX_RL/PERSON_DICOM_siemens_ai_recon.nii"
+from sirf.Reg import NiftiImageData3D
+from sirf.Gadgetron import ImageData
+siemens_ai_recon = NiftiImageData3D(siemens_ai_recon_fname)  # Load the Siemens AI reconstruction from the NIfTI file
+
 # %%
-show2D([np.squeeze(np.abs(el.asarray()[11,110:410, 80:380])).T for el in [x_recon, fista.solution]],
-       title=['Fully Sampled', f'Undersampled LS+{alpha}TV'])
+show2D([np.squeeze(np.abs(el.asarray()[11,110:410, 80:380])).T for el in [x_recon, am['ai']['algo'].solution, fista.solution]],
+       title=['Fully Sampled', 'AI dataset LS+0.3TV',f'Undersampled LS+{alpha}TV'])
 # %%
