@@ -97,18 +97,25 @@ show2D(np.squeeze(np.abs(x_recon.asarray()[11,110:410, 80:380])).T)
 # AI protocol
 ad_ai = AcquisitionData(output_files[1])
 ad_ai = preprocess_acquisition_data(ad_ai)
-
-#%%
-from stgeorges_utils import plot_kspace_lines_memory
-plot_kspace_lines_memory([ad_fs, ad_ai])
 # %%
 
-def get_AcquisitionModel_CSM(acq_data, smoothness=100):
+def get_AcquisitionModel_CSM(acq_data, smoothness=100, fully_sampled=True):
     '''Given an AcquisitionData, returns an AcquisitionModel and the CoilSensitivityData object'''
+    if fully_sampled:
+        acq_data_us = acq_data
+    else:
+        always_sampled = fully_sampled
+        us_index = []
+        for acq_idx, ky_idx in enumerate(acq_data.get_ISMRMRD_info('kspace_encode_step_1')):
+            if ky_idx in always_sampled:
+                us_index.append(acq_idx)
+        acq_data_us = acq_data.get_subset(us_index)
+
+    
     csm = CoilSensitivityData()
     csm.smoothness = smoothness
-    csm.calculate(acq_data)
-    logger.info(f"CSM done")
+    csm.calculate(acq_data_us)
+    logger.info(f"CSM set up from centre fully sampled lines")
 
     E = AcquisitionModel(acqs=acq_data, imgs=csm)
     E.set_coil_sensitivity_maps(csm)
@@ -137,7 +144,11 @@ def get_AcquisitionModel_CSM(acq_data, smoothness=100):
     return E, csm
 
 #%%
-E, csm = get_AcquisitionModel_CSM(ad_ai)
+# Get the Coil Sensitivity Maps (CSM) from the fully sampled data
+E, csm_fs = get_AcquisitionModel_CSM(ad_fs, fully_sampled=True)
+am['fs'] = {'am': E, 'csm': csm_fs}
+#%%
+E, csm = get_AcquisitionModel_CSM(ad_ai, fully_sampled=range(-13,13))
 am['ai'] = {'am': E, 'csm': csm}
 # am['ai']['norm'] = am['ai']['am'].norm()
 am['ai']['data'] = ad_ai
@@ -167,12 +178,14 @@ import importlib
 importlib.reload(stgeorges_utils)
 from stgeorges_utils import plot_kspace_lines_memory
 acq_data_us = create_gaussian_variable_density_kspace_data(am['fs']['data'],
-                                                           acceleration_factor=3.5)
+                                                           acceleration_factor=4)
+
+#%%
 plot_kspace_lines_memory([am['fs']['data'], am['ai']['data'], acq_data_us], None)
                         #  np.max(ky_index))
 
 # %%
-E, csm = get_AcquisitionModel_CSM(acq_data_us)
+E, csm = get_AcquisitionModel_CSM(acq_data_us, fully_sampled=range(-13,13))
 am['us'] = {'am': E, 'csm': csm}
 am['us']['data'] = acq_data_us
 #%%
@@ -196,15 +209,21 @@ class LogAll(Callback):
                     ).T
             self.iterates.append(dslice)
             if self.reference is not None:
+                try:
+                    drmse = rmse(solver.solution.asarray(), 
+                                             self.reference.asarray(), 
+                                             border=self.rmse_border)
+                except ValueError as ve:
+                    logger.warning(f"ValueError encountered in RMSE calculation: {ve}. Trying cropping...")
+                    drmse = rmse(solver.solution.asarray(), 
+                                             self.reference.asarray()[:,3:-3, :], 
+                                             border=self.rmse_border)
                 self.rmse.append(
-                    rmse(solver.solution.asarray(), 
-                         self.reference.asarray(), 
-                         border=self.rmse_border)
+                    drmse
                 )
             if self.plot:
                 show2D(dslice)
 
-logall = LogAll(rmse_reference=x_recon.asarray(), plot=True)
 
 
 
@@ -220,7 +239,8 @@ am['us']['alpha'] = 3e-6
 
 #%%
 # Define our objective/loss function as least squares between Ex and y
-
+num_iterations = 10
+    
 for k,v in am.items():
     if k in ['fs', 'ai']:
         logger.info(f"Skipping {k}")
@@ -245,66 +265,12 @@ for k,v in am.items():
     v['algo'] = fista
 
     # Run FISTA for least squares
-    num_iterations = 10
-    fista.run(num_iterations, callbacks=[ProgressCallback(), logall])
+    v['callback'] = LogAll(rmse_reference=x_recon, plot=True)
+
+    fista.run(num_iterations, callbacks=[ProgressCallback(), v['callback']])
     
 
 # %%
-from cil.utilities.display import show2D
-
-show2D(
-    [np.abs(v['recon'].asarray()) for k,v in am.items()],
-    title=[k for k in am.keys()],
-    num_cols=3,
-    slice_list=(0,6)
-
-)
-#%%
-import matplotlib.pyplot as plt
-i = 0
-for k,v in am.items():
-    plt.semilogy(v['algo'].loss[1:])
-    i += num_iterations
-
-# %%
-#AI
-which = 'us'
-E = am[which]['am']
-acq_data = am[which]['data']
-x_init = E.inverse(acq_data)
-
-f = LeastSquares(E, acq_data, c=1)
-
-alpha = 3e-6
-TV = FGP_TV(alpha=alpha, nonnegativity=False, device='cpu', max_iteration=500)
-G = TV
-
-# add logger callback to FISTA
-
-
-# Set up FISTA
-fista = FISTA(initial=x_init.fill(0), f=f, g=G)
-fista.update_objective_interval = 1
-
-# Run FISTA for least squares
-num_iterations = 70
-log_us = LogAll(plot=True)
-# fista.run(num_iterations, callbacks=[ProgressCallback(), log_us])
-fista.run(num_iterations)
-
-#%%
-plt.semilogy(fista.loss[1:])
-#%%
-objective = fista.loss[1:]
-solution = fista.solution.copy()
-for i in range(5):
-    fista = FISTA(initial=solution, f=f, g=G)
-    fista.run(num_iterations)
-    objective.extend(fista.loss[1:])
-    solution = fista.solution.copy()
-
-#%%
-show2D(np.squeeze(np.abs(log_us.iterates[5].asarray()[11,110:410, 80:380])).T)
 
 #%%
 # Load Original Siemens AI reconstruction
@@ -315,7 +281,23 @@ from sirf.Reg import NiftiImageData3D
 from sirf.Gadgetron import ImageData
 siemens_ai_recon = NiftiImageData3D(siemens_ai_recon_fname)  # Load the Siemens AI reconstruction from the NIfTI file
 
+from skimage.transform import downscale_local_mean
+print (siemens_ai_recon.asarray().shape)
+#%%
+# Try to put the Siemens AI reconstruction into a lower resolution grid to match the undersampled data and fully sampled data
+binned = downscale_local_mean(siemens_ai_recon.asarray(), (2, 2, 1))  # keep Z, bin 2x2 in XY
+siemens_rebinned_recon = np.abs(np.fliplr(np.flipud(binned[110:410, 130:430,  6]))).T
+#%%
+show2D([siemens_rebinned_recon], title=['Siemens AI recon'])
 # %%
-show2D([np.squeeze(np.abs(el.asarray()[11,110:410, 80:380])).T for el in [x_recon, am['ai']['algo'].solution, fista.solution]],
-       title=['Fully Sampled', 'AI dataset LS+0.3TV',f'Undersampled LS+{alpha}TV'])
+show2D([np.squeeze(np.abs(x_recon.asarray()[11,110:410, 80:380])).T,
+        siemens_rebinned_recon, 
+        np.squeeze(np.abs(am['ai']['algo'].solution.asarray()[11,110:410, 80:380])).T,
+        np.squeeze(np.abs(am['us']['algo'].solution.asarray()[11,110:410, 80:380])).T],
+       title=['Fully Sampled', 'Siemens AI recon', f'AI data LS+{am["ai"]["alpha"]}TV',
+              f'Undersampled LS+{am['us']['alpha']}TV'])
+
+# %%
+show2D([np.squeeze(np.abs(el.asarray()[11,110:410, 80:380])).T for el in [am['ai']['am'].inverse(am['ai']['data']), am['ai']['algo'].solution, am['us']['am'].inverse(am['us']['data']), am['us']['algo'].solution]], 
+       title=['AI data inverse', 'AI data LS+TV', 'Undersampled inverse', 'Undersampled LS+TV'])
 # %%

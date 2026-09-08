@@ -2,6 +2,8 @@ import ismrmrd
 import os
 from sirf.Gadgetron import ImageData
 from cil.optimisation.utilities.callbacks import Callback
+import math
+from skimage.metrics import mean_squared_error
 
 def change_ismrmrd(full_filename_in, full_filename_out):
     if full_filename_in == full_filename_out:
@@ -497,4 +499,27 @@ def plot_kspace_lines_memory(imgs, ky_index_max):
         sampling_mask = np.zeros((ky_index_max+1,ky_index_max+1))
         sampling_mask[ky_index,:] = 1
         ax[idx].imshow(sampling_mask, vmin=0, vmax=1)
-     
+
+
+def rmse(input_im, ground_truth, border=20):
+    """"Calculates the rmse between the input image and the ground truth, ignoring a border of specified width.
+    
+    Parameters:
+    -----------
+    input_im : np.ndarray
+        The input image.
+    ground_truth : np.ndarray
+        The ground truth image.
+    border : int, optional
+        The width of the border to ignore when calculating the RMSE. Default is 20.
+
+    Returns:
+    --------
+    float
+        The RMSE between the input image and the ground truth, ignoring the specified border.
+    """
+    if np.shape(input_im)!=np.shape(ground_truth):
+        raise ValueError('imgs have diff shape')
+    mse = mean_squared_error(np.abs(input_im[border:-border,border:-border,border:-border]), \
+        np.abs(ground_truth[border:-border,border:-border,border:-border]))
+    return math.sqrt(mse)
