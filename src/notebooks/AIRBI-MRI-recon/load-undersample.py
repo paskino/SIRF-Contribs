@@ -259,17 +259,25 @@ class LogAll(Callback):
 # leading to a complete different scale of the reconstructed image and 
 # reconstruction parameter
 
+# TV
 am['fs']['alpha'] = 8.5e-06
 am['ai']['alpha'] = 3e-1
 am['us']['alpha'] = 8.5e-6
 
+# Wavelet sparsity regularisation
+am['fs']['alpha'] = 8.5e-06
+am['ai']['alpha'] = 3e-1
+am['us']['alpha'] = 3e-6
+
+
 #%%
 # Define our objective/loss function as least squares between Ex and y
-num_iterations = 60
-start_new = False
-    
+num_iterations = 10
+start_new = True
+from SIRFWavelets import FunctionOfAbs, SIRFWaveletOperator
+
 for k,v in am.items():
-    if k in ['fs']:
+    if k in ['fs', 'us']:
         logger.info(f"Skipping {k}")
         continue
     logger.info(f"Processing {k}")
@@ -282,8 +290,14 @@ for k,v in am.items():
     alpha = v['alpha']
     # alpha = 1
     TV = FGP_TV(alpha=alpha, nonnegativity=False, device='cpu', max_iteration=500)
-    G = TV
-
+    # # Tau in FISTA is 
+    # tau = 0.99*2/am['us']['algo'].f.L
+    # # alpha * tau ~ 2.e-5
+    alpha = 3.0e-1
+    wop = SIRFWaveletOperator(domain_geometry=x_init, level=None, wname="haar")
+    l1s = L1Sparsity(wop)
+    G = alpha * FunctionOfAbs(l1s)
+    
     logger.info(f"LS {f(x_init)}")
     logger.info(f"TV {G(x_init)}")
     # add logger callback to FISTA
@@ -301,6 +315,13 @@ for k,v in am.items():
 
     fista.run(num_iterations, callbacks=[ProgressCallback(), v['callback']])
     
+#%%
+import matplotlib.pyplot as plt
+plt.plot(am['us']['algo'].loss)
+plt.xlabel('Iteration')
+plt.ylabel('Loss')
+plt.title('Loss Curve for Undersampled LS+Wavelet Reconstruction')
+plt.show()
 
 #
 #%%
@@ -326,8 +347,10 @@ show2D([np.squeeze(np.abs(x_recon.asarray()[11,110:410, 80:380])).T,
         siemens_rebinned_recon, 
         np.squeeze(np.abs(am['ai']['algo'].solution.asarray()[11,110:410, 80:380])).T,
         np.squeeze(np.abs(am['us']['algo'].solution.asarray()[11,110:410, 80:380])).T],
-       title=['Fully Sampled', 'Siemens AI recon', f'AI data LS+{am["ai"]["alpha"]}TV',
-              f'Undersampled LS+{am['us']['alpha']}TV'])
+       title=['Fully Sampled', 
+              'Siemens AI recon', 
+              f'AI data +{am["ai"]["alpha"]}Wavelet',
+              f'Undersampled LS+{am['us']['alpha']}Wavelet'])
 
 #%%
 import matplotlib.pyplot as plt
@@ -336,6 +359,36 @@ plt.xlabel('Iteration')
 plt.ylabel('Loss')
 plt.title('Loss Curve for Undersampled LS+TV Reconstruction')
 plt.show()
+#%%
+#####################
+vdata = np.squeeze(np.abs(x_recon.asarray()[11,110:410, 80:380])).T
+
+# Visualise the sub-image within the whole image
+# and the size of the features we are tracking on
+from matplotlib.patches import Rectangle
+
+fig, ax = plt.subplots()
+ax.imshow(vdata, cmap='gray')
+start = 600
+registration_p0 = (100,150)
+registration_region = 100
+dsize = 20
+
+box = Rectangle((registration_p0[1], registration_p0[0]), registration_region, registration_region, linewidth=2, edgecolor='white', facecolor='none')
+
+
+ax.plot([start + i for i in range(dsize)], [registration_p0[0] + registration_region//2 for i in range(dsize)], color='C1', linewidth=2)
+ax.add_patch(box)
+sax = ax.inset_axes([0, 0.5, 0.5, 0.5])
+sub_image = vdata[registration_p0[0]:registration_p0[0]+registration_region, registration_p0[1]:registration_p0[1]+registration_region]
+sax.imshow(sub_image, cmap='gray')
+sax.get_xaxis().set_visible(False)
+sax.get_yaxis().set_visible(False)
+start = start - registration_p0[1]
+sax.plot([start + i for i in range(dsize)], [registration_region//2 for i in range(dsize)], color='C1', linewidth=2)
+plt.show()
+
+#####################
 # %%
 show2D([np.squeeze(np.abs(el.asarray()[11,110:410, 80:380])).T for el in [am['ai']['am'].inverse(am['ai']['data']), am['ai']['algo'].solution, am['us']['am'].inverse(am['us']['data']), am['us']['algo'].solution]], 
        title=['AI data inverse', 'AI data LS+TV', 'Undersampled inverse', 'Undersampled LS+TV'])
@@ -402,20 +455,24 @@ print(fabs1.proximal(data, tau, out=out1), fabs2.proximal(data, tau, out=out2))
 show2D([np.squeeze(np.abs(el.asarray()[11,110:410, 80:380])).T for el in [out1, out2]])
 # %%
 importlib.reload(SIRFWavelets)
-from SIRFWavelets import SIRFWaveletOperator
+from SIRFWavelets import SIRFWaveletOperator, FunctionOfAbs
 
-wop = SIRFWaveletOperator(domain_geometry=am['us']['algo'].solution)
+data = am['us']['algo'].solution
+wop = SIRFWaveletOperator(domain_geometry=data, wname="bior1.1")
 
-out3 = wop.direct(am['us']['algo'].solution)
+out3 = wop.direct(data)
 out4 = wop.adjoint(out1)
 show2D([np.squeeze(np.abs(el.as_array()[11,110:410, 80:380])).T for el in [out3, out4]])
 
 # %%
 l1s = L1Sparsity(wop)
 
-tau = 5e-5
-out5 = l1s.proximal(am['us']['algo'].solution, tau)
+tau = 2e-5
+out5 = l1s.proximal(data, tau)
 
-show2D([np.squeeze(np.abs(el.as_array()[11,110:410, 80:380])).T for el in [am['us']['algo'].solution, out5]])
+fabsl = FunctionOfAbs(l1s)
+out6 = fabsl.proximal(data, tau)
+
+show2D([np.squeeze(np.abs(el.as_array()[11,110:410, 80:380])).T for el in [data, out5, out6]])
 
 # %%

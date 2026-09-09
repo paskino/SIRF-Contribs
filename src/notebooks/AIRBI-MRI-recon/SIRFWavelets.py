@@ -193,12 +193,13 @@ def _abs_and_project(func):
                 tmp = fvals_np  - 0.5*y.as_array() + 0.5*r.as_array()
                 tmp[tmp < 0] = 0.
                 y += tmp 
-                y -= fvals
+                y -= fvals_np
                 fvals = func(y, *args, **kwargs)
                 cts += 1
                 if cts > 10:
                     fvals_np = fvals.as_array()
                     fvals_np[fvals_np < 0] = 0.
+                    fvals.fill(fvals_np)
                     break
 
         if out is None: 
