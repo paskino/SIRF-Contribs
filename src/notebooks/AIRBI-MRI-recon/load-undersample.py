@@ -328,13 +328,23 @@ plt.show()
 # Load Original Siemens AI reconstruction
 # Data loaded from DICOM files, exported by Slicer3D as NIfTI file
 
-siemens_ai_recon_fname = "/input/recon_MID00614_FID129152_CONVENTIONAL_RECON_SEQD_GF2_AX_RL/PERSON_DICOM_siemens_ai_recon.nii"
+siemens_ai_recon_fname = "/input/recon_MID00619_FID129157_AI_RECON_SEQD_512_GF4_AX_RL/PERSON_DICOM_siemens_ai_recon.nii"
 from sirf.Reg import NiftiImageData3D
 from sirf.Gadgetron import ImageData
 siemens_ai_recon = NiftiImageData3D(siemens_ai_recon_fname)  # Load the Siemens AI reconstruction from the NIfTI file
 
 from skimage.transform import downscale_local_mean
 print (siemens_ai_recon.asarray().shape)
+
+#%%
+########## SIEMENS FULLY SAMPLED RECONSTRUCTION
+siemens_fs_recon_fname = "/input/recon_MID00614_FID129152_CONVENTIONAL_RECON_SEQD_GF2_AX_RL/PERSON_DICOM_siemens_fully_sampled.nii"
+from sirf.Reg import NiftiImageData3D
+from sirf.Gadgetron import ImageData
+siemens_fs_recon = NiftiImageData3D(siemens_fs_recon_fname)  # Load the Siemens fully sampled reconstruction from the NIfTI file
+#%%
+siemens_fs_recon = np.squeeze(np.abs(np.fliplr(np.flipud(siemens_fs_recon.asarray()[110:410, 130:430,6])))).T
+# show2D(siemens_fs_recon)
 #%%
 # Try to put the Siemens AI reconstruction into a lower resolution grid to match the undersampled data and fully sampled data
 binned = downscale_local_mean(siemens_ai_recon.asarray(), (2, 2, 1))  # keep Z, bin 2x2 in XY
@@ -361,31 +371,50 @@ plt.title('Loss Curve for Undersampled LS+TV Reconstruction')
 plt.show()
 #%%
 #####################
-vdata = np.squeeze(np.abs(x_recon.asarray()[11,110:410, 80:380])).T
 
+recon = x_recon
+title = 'Fully Sampled'
+
+recon = am['us']['algo'].solution
+title = f'Undersampled LS+ {am["us"]["alpha"]} Wavelet'
+vdata = np.squeeze(np.abs(recon.asarray()[11,110:410, 80:380])).T
+
+recon = am['ai']['algo'].solution
+title = f'AI data LS+ {am["ai"]["alpha"]} Wavelet'
+vdata = np.squeeze(np.abs(recon.asarray()[11,110:410, 80:380])).T
+
+recon = siemens_rebinned_recon
+title = 'Siemens AI recon'
+vdata = siemens_rebinned_recon
+
+recon = siemens_fs_recon
+title = 'Siemens Fully Sampled recon'
+vdata = siemens_fs_recon
 # Visualise the sub-image within the whole image
 # and the size of the features we are tracking on
 from matplotlib.patches import Rectangle
 
 fig, ax = plt.subplots()
-ax.imshow(vdata, cmap='gray')
+ax.imshow(vdata, cmap='gray', origin='lower')
 start = 600
-registration_p0 = (100,150)
-registration_region = 100
+registration_p0 = (85,170)
+registration_region = 50
 dsize = 20
 
 box = Rectangle((registration_p0[1], registration_p0[0]), registration_region, registration_region, linewidth=2, edgecolor='white', facecolor='none')
 
 
-ax.plot([start + i for i in range(dsize)], [registration_p0[0] + registration_region//2 for i in range(dsize)], color='C1', linewidth=2)
+# ax.plot([start + i for i in range(dsize)], [registration_p0[0] + registration_region//2 for i in range(dsize)], color='C1', linewidth=2)
 ax.add_patch(box)
 sax = ax.inset_axes([0, 0.5, 0.5, 0.5])
-sub_image = vdata[registration_p0[0]:registration_p0[0]+registration_region, registration_p0[1]:registration_p0[1]+registration_region]
-sax.imshow(sub_image, cmap='gray')
+sub_image = vdata[registration_p0[0]:registration_p0[0]+registration_region, 
+                  registration_p0[1]:registration_p0[1]+registration_region]
+sax.imshow(sub_image, cmap='gray', origin='lower')
 sax.get_xaxis().set_visible(False)
 sax.get_yaxis().set_visible(False)
 start = start - registration_p0[1]
-sax.plot([start + i for i in range(dsize)], [registration_region//2 for i in range(dsize)], color='C1', linewidth=2)
+# sax.plot([start + i for i in range(dsize)], [registration_region//2 for i in range(dsize)], color='C1', linewidth=2)
+plt.title(title)
 plt.show()
 
 #####################
