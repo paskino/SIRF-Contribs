@@ -92,7 +92,7 @@ acq_data = am[which]['data']
 recon = FullySampledReconstructor()
 recon.set_input(acq_data)
 recon.process()
-x_recon = recon.get_output()
+x_recon = recon.get_output().copy()
 
 reference_rmse = np.sqrt(np.mean(x_recon.asarray()*x_recon.asarray()))
 #%%
@@ -372,34 +372,55 @@ plt.show()
 #%%
 #####################
 
-recon = x_recon
-title = 'Fully Sampled'
+# vdata = np.squeeze(np.abs(recon.asarray()[11,110:410, 80:380])).T if hasattr(recon, 'asarray') else recon
 
-recon = am['us']['algo'].solution
-title = f'Undersampled LS+ {am["us"]["alpha"]} Wavelet'
-vdata = np.squeeze(np.abs(recon.asarray()[11,110:410, 80:380])).T
+which = 0
 
-recon = am['ai']['algo'].solution
-title = f'AI data LS+ {am["ai"]["alpha"]} Wavelet'
-vdata = np.squeeze(np.abs(recon.asarray()[11,110:410, 80:380])).T
+if which == 0:
+    recon = x_recon
+    title = 'SIRF Fully Sampled'
+    vdata = np.squeeze(np.abs(recon.asarray()[11,110:410, 80:380])).T
+    letter = 'C'
 
-recon = siemens_rebinned_recon
-title = 'Siemens AI recon'
-vdata = siemens_rebinned_recon
+elif which == 1:
+    recon = am['us']['algo'].solution
+    title = f'Undersampled LS+ {am["us"]["alpha"]} Wavelet'
+    letter = 'E'
+    vdata = np.squeeze(np.abs(recon.asarray()[11,110:410, 80:380])).T
 
-recon = siemens_fs_recon
-title = 'Siemens Fully Sampled recon'
-vdata = siemens_fs_recon
-# Visualise the sub-image within the whole image
+elif which == 2:
+    recon = am['ai']['algo'].solution
+    title = f'SIRF AI data LS+ {am["ai"]["alpha"]} Wavelet'
+    letter = 'D'
+    vdata = np.squeeze(np.abs(recon.asarray()[11,110:410, 80:380])).T
+
+elif which == 3:
+    recon = siemens_rebinned_recon
+    title = 'Siemens AI'
+    vdata = siemens_rebinned_recon
+    letter = 'B'
+
+elif which == 4:
+    recon = siemens_fs_recon
+    title = 'Siemens Fully Sampled'
+    vdata = siemens_fs_recon
+    letter = 'A'
+# Visualise the  sub-image within the whole image
 # and the size of the features we are tracking on
 from matplotlib.patches import Rectangle
 
-fig, ax = plt.subplots()
+fig, ax = plt.subplots(figsize = (6, 6))
 ax.imshow(vdata, cmap='gray', origin='lower')
+ax.get_xaxis().set_visible(False)
+ax.get_yaxis().set_visible(False)
 start = 600
 registration_p0 = (85,170)
 registration_region = 50
 dsize = 20
+
+if which in [3,4]:
+    registration_p0 = (82,174)
+
 
 box = Rectangle((registration_p0[1], registration_p0[0]), registration_region, registration_region, linewidth=2, edgecolor='white', facecolor='none')
 
@@ -414,7 +435,10 @@ sax.get_xaxis().set_visible(False)
 sax.get_yaxis().set_visible(False)
 start = start - registration_p0[1]
 # sax.plot([start + i for i in range(dsize)], [registration_region//2 for i in range(dsize)], color='C1', linewidth=2)
-plt.title(title)
+# plt.title(title)
+ax.text(280, 280, letter,
+        fontsize=28, color='white',
+        ha='center', va='center')
 plt.show()
 
 #####################
@@ -504,4 +528,9 @@ out6 = fabsl.proximal(data, tau)
 
 show2D([np.squeeze(np.abs(el.as_array()[11,110:410, 80:380])).T for el in [data, out5, out6]])
 
+# %%
+from stgeorges_utils import plot_kspace_lines_memory
+
+
+plot_kspace_lines_memory([am['fs']['data'], am['ai']['data']],0)
 # %%
