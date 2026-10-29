@@ -42,8 +42,10 @@ command = "siemens_to_ismrmrd"
 # input_files = ["/home/jovyan/work/person2/person2/meas_MID00595_FID133061_pd_tse_fs_cor_uflex_no_spine.dat",
 #                "/home/jovyan/work/person2/person2/meas_MID00598_FID133064_pd_tse_fs_cor_uflex_no_spine.dat"]
 
-input_files = ["/input/meas_MID00614_FID129152_CONVENTIONAL_RECON_SEQD_GF2_AX_RL.dat",
-              "/input/meas_MID00619_FID129157_AI_RECON_SEQD_512_GF4_AX_RL.dat"]
+input_files = [
+    "/input/meas_MID00614_FID129152_CONVENTIONAL_RECON_SEQD_GF2_AX_RL.dat",
+    "/input/meas_MID00619_FID129157_AI_RECON_SEQD_512_GF4_AX_RL.dat"
+    ]
 
 proc_dir = tempfile.mkdtemp(prefix="stgeorges_proc_")
 

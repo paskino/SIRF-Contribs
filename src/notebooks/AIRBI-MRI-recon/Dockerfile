@@ -1,4 +1,4 @@
-FROM synerbi/sirf:devel-gpu
+FROM synerbi/sirf:edge
 
 USER jovyan
 RUN pip install pydicom
@@ -11,8 +11,9 @@ RUN mkdir -p /home/jovyan/recon_scripts
 COPY --chown=jovyan:users mr_recon.sh /home/jovyan/recon_scripts/
 COPY --chown=jovyan:users stgeorges_pipeline.py /home/jovyan/recon_scripts/
 COPY --chown=jovyan:users stgeorges_utils.py /home/jovyan/recon_scripts/
+COPY --chown=jovyan:users load-undersample.py /home/jovyan/recon_scripts/
 
-WORKDIR /home/jovyan/work
+WORKDIR /home/jovyan/recon_scripts
 
-# CMD ["bash" , "mr_recon.sh"]
+CMD ["bash" , "mr_recon.sh"]
 # CMD ["id", "-a"]
