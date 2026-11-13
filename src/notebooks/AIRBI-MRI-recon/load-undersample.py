@@ -51,13 +51,14 @@ def get_AcquisitionModel_CSM(acq_data, smoothness=100, fully_sampled=True):
             if ky_idx in always_sampled:
                 us_index.append(acq_idx)
         acq_data_us = acq_data.get_subset(us_index)
+        logger.info(f"CSM set up from centre fully sampled lines")
+
 
     
     csm = CoilSensitivityData()
     csm.smoothness = smoothness
     csm.calculate(acq_data_us)
-    logger.info(f"CSM set up from centre fully sampled lines")
-
+    
     E = AcquisitionModel(acqs=acq_data, imgs=csm)
     E.set_coil_sensitivity_maps(csm)
     
