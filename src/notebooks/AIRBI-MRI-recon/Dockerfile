@@ -4,6 +4,7 @@ USER jovyan
 RUN pip install pydicom
 RUN pip install ismrmrd
 RUN pip install nii2dcm
+RUN conda install scikit-image -y
 
 # RUN git clone --branch downsampled-MRI-recon-stgeorge --depth 1 https://github.com/paskino/SIRF-Contribs.git
 
@@ -15,5 +16,5 @@ COPY --chown=jovyan:users load-undersample.py /home/jovyan/recon_scripts/
 
 WORKDIR /home/jovyan/recon_scripts
 
-CMD ["bash" , "mr_recon.sh"]
-# CMD ["id", "-a"]
+# uncomment the following if you want to launch the container as executable to run a reconstruction
+# CMD ["bash" , "mr_recon.sh"]

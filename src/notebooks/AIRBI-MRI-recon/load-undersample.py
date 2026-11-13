@@ -3,12 +3,18 @@ import subprocess
 import os
 import logging
 import numpy as np
+import importlib
 
+#### StGeorges Utils
 import sys
 sys.path.append("/home/jovyan/work/SIRF-Contribs/src/notebooks/AIRBI-MRI-recon/")
+import stgeorges_utils
 from stgeorges_utils import change_ismrmrd, to_dicom_folder, LogfileCallback
 from stgeorges_utils import plot_kspace_lines_memory
+from stgeorges_utils import rmse
+from stgeorges_utils import plot_kspace_lines_memory
 
+# SIRF
 from sirf.Gadgetron import AcquisitionData, ImageData
 from sirf.Gadgetron import AcquisitionModel
 from sirf.Gadgetron import AcquisitionDataProcessor
@@ -16,6 +22,7 @@ from sirf.Gadgetron import CartesianGRAPPAReconstructor, FullySampledReconstruct
 from sirf.Gadgetron import CoilSensitivityData
 from sirf.Gadgetron import preprocess_acquisition_data
 
+# CIL
 from cil.optimisation.functions import LeastSquares
 from cil.optimisation.functions import ZeroFunction
 from cil.optimisation.algorithms import FISTA, CGLS, GD
@@ -29,87 +36,8 @@ import tempfile
 from cil.optimisation.functions import L1Sparsity
 from cil.optimisation.operators import WaveletOperator
 
-from stgeorges_utils import rmse
+
 # from AbsFunction import FunctionOfAbs
-
-#%%
-
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
-
-command = "siemens_to_ismrmrd"
-
-# input_files = ["/home/jovyan/work/person2/person2/meas_MID00595_FID133061_pd_tse_fs_cor_uflex_no_spine.dat",
-#                "/home/jovyan/work/person2/person2/meas_MID00598_FID133064_pd_tse_fs_cor_uflex_no_spine.dat"]
-
-input_files = [
-    "/input/meas_MID00614_FID129152_CONVENTIONAL_RECON_SEQD_GF2_AX_RL.dat",
-    "/input/meas_MID00619_FID129157_AI_RECON_SEQD_512_GF4_AX_RL.dat"
-    ]
-
-proc_dir = tempfile.mkdtemp(prefix="stgeorges_proc_")
-
-output_files = []
-for fname in input_files:
-    logger.info(f"Processing file {fname}...")
-    file_in = fname
-    file_out = os.path.join(proc_dir, os.path.basename(file_in).replace(".dat", ".h5"))
-    if os.path.exists(file_out):
-        logger.warning(f"Output file {file_out} already exists. Removing it.")
-        os.remove(file_out)
-    
-    out = subprocess.run(
-        [command, "-f", file_in, "-o", file_out, "-z", "2", "-M"],
-        capture_output=False,
-        text=False,
-    )
-    
-    logger.info(out.stdout)
-    logger.error(out.stderr)
-    
-    # Change ISMRMRD file if needed
-    file_out_mod = file_out.replace(".h5", "_mod.h5")
-    change_ismrmrd(file_out, file_out_mod)
-    logger.info(f"Modified ISMRMRD file saved as {file_out_mod}")
-    output_files.append(file_out_mod)
-
-#%%
-# store all data in a dictionary
-am = {}
-#%%
-# Fully sampled dataset
-ad_fs = AcquisitionData(output_files[0])
-ad_fs = preprocess_acquisition_data(ad_fs)
-am['fs'] = {'am': None, 'csm': None}
-#%%
-sum_fs = np.sum(np.abs(ad_fs.asarray().ravel()))
-# ad_fs /= sum_fs
-am['fs']['data'] = ad_fs
-
-print(f"Sum of Fully Sampled data: {sum_fs}")
-# %%
-from sirf.Gadgetron import FullySampledReconstructor
-which = "fs"
-acq_data = am[which]['data']
-recon = FullySampledReconstructor()
-recon.set_input(acq_data)
-recon.process()
-x_recon = recon.get_output()
-
-reference_rmse = np.sqrt(np.mean(x_recon.asarray()*x_recon.asarray()))
-#%%
-
-show2D(np.squeeze(np.abs(x_recon.asarray()[11,110:410, 80:380])).T)
-#%%
-# AI protocol
-ad_ai = AcquisitionData(output_files[1])
-ad_ai = preprocess_acquisition_data(ad_ai)
-
-sum_ai = np.sum(np.abs(ad_ai.asarray().ravel()))
-# ad_ai /= sum_ai
-print(f"Sum of AI data: {sum_ai}")
-am['ai'] = {'am': None, 'csm': None, 'data':  ad_ai}
-
 # %%
 
 def get_AcquisitionModel_CSM(acq_data, smoothness=100, fully_sampled=True):
@@ -157,19 +85,19 @@ def get_AcquisitionModel_CSM(acq_data, smoothness=100, fully_sampled=True):
     return E, csm
 
 #%%
-# Get the Coil Sensitivity Maps (CSM) from the fully sampled data
-E, csm_fs = get_AcquisitionModel_CSM(am['fs']['data'], fully_sampled=True)
-am['fs']['am'] = E
-am['fs']['csm'] = csm_fs
-#%%
-E, csm = get_AcquisitionModel_CSM(am['ai']['data'], fully_sampled=range(-13,13))
-am['ai']['am'] = E
-am['ai']['csm'] = csm
-# am['ai']['norm'] = am['ai']['am'].norm()
+def save_ImageData_as_nii(recon, prefix, output_dir='/output/nii'):
+    from sirf.Reg import NiftiImageData3D
+    from sirf.Gadgetron import ImageData
 
-# logger.info(f"Norm of E (AI): {am['ai']['norm']}")
-# %%
-# Undersample fully sample data with Gaussian variable density 
+    # cast to int16 range
+    pixel_data = recon.abs()
+    pixel_data = pixel_data / pixel_data.max() * np.iinfo(np.uint16).max
+
+    niisolution = NiftiImageData3D(pixel_data)
+    os.makedirs(os.path.join(output_dir, prefix), exist_ok=True)
+    ofname = f'/output/nii/{prefix}/{prefix}-solution.nii'
+    niisolution.write(ofname)
+    print(f"Solution written to {ofname} {os.path.exists(ofname)}")
 
 # Create undersampled data
 def create_gaussian_variable_density_kspace_data(acq_data, acceleration_factor=3.5):
@@ -187,26 +115,142 @@ def create_gaussian_variable_density_kspace_data(acq_data, acceleration_factor=3
     acq_data_us = acq_data.get_subset(us_index)
 
     return acq_data_us
+
 #%%
-import stgeorges_utils
-import importlib
-importlib.reload(stgeorges_utils)
-from stgeorges_utils import plot_kspace_lines_memory
-acq_data_us = create_gaussian_variable_density_kspace_data(am['fs']['data'],
-                                                           acceleration_factor=4)
-am['us'] = {'data': acq_data_us}
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 #%%
-plot_kspace_lines_memory([am['fs']['data'], am['ai']['data'], acq_data_us], None)
-                        #  np.max(ky_index))
+create_undersampled_data = True
+acceleration_factor = 4
+#%%
+command = "siemens_to_ismrmrd"
+
+# input_files = ["/home/jovyan/work/person2/person2/meas_MID00595_FID133061_pd_tse_fs_cor_uflex_no_spine.dat",
+#                "/home/jovyan/work/person2/person2/meas_MID00598_FID133064_pd_tse_fs_cor_uflex_no_spine.dat"]
+
+input_files = [
+    "/input/meas_MID00614_FID129152_CONVENTIONAL_RECON_SEQD_GF2_AX_RL.dat",
+    "/input/meas_MID00619_FID129157_AI_RECON_SEQD_512_GF4_AX_RL.dat"
+    ]
+
+proc_dir = tempfile.mkdtemp(prefix="stgeorges_proc_")
+
+output_files = []
+for fname in input_files:
+    logger.info(f"Processing file {fname}...")
+    file_in = fname
+    file_out = os.path.join(proc_dir, os.path.basename(file_in).replace(".dat", ".h5"))
+    if os.path.exists(file_out):
+        logger.warning(f"Output file {file_out} already exists. Removing it.")
+        os.remove(file_out)
+    
+    out = subprocess.run(
+        [command, "-f", file_in, "-o", file_out, "-z", "2", "-M"],
+        capture_output=False,
+        text=False,
+    )
+    
+    logger.info(out.stdout)
+    logger.error(out.stderr)
+    
+    # Change ISMRMRD file if needed
+    file_out_mod = file_out.replace(".h5", "_mod.h5")
+    change_ismrmrd(file_out, file_out_mod)
+    logger.info(f"Modified ISMRMRD file saved as {file_out_mod}")
+    output_files.append(file_out_mod)
+
+#%%
+# store all data in a dictionary
+am = {}
+
+#%%
+for f in output_files:
+    print(f"Processing {os.path.basename(f)}")
+    acq_data = AcquisitionData(f)
+    acq_data = preprocess_acquisition_data(acq_data)
+
+    ky_index = np.unique(acq_data.get_ISMRMRD_info('kspace_encode_step_1'))
+    ky_index_max = np.max(ky_index)
+    ky_index_min = np.min(ky_index)
+
+
+    if np.array_equal(np.arange(ky_index_min, ky_index_max + 1), ky_index):
+        # Fully sampled dataset
+        print (f"Fully sampled data")
+        which = "fs"
+        am[which] = {'am': None, 'csm': None, 'data': acq_data}
+        from sirf.Gadgetron import FullySampledReconstructor
+        
+        acq_data = am[which]['data']
+        
+        recon = FullySampledReconstructor()
+        recon.set_input(acq_data)
+        recon.process()
+        # store the reconstruction
+        am[which]['recon'] = recon.get_output()
+        # save_ImageData_as_nii(x_recon, prefix=which)
+        # show2D(np.squeeze(np.abs(x_recon.asarray()[11,110:410, 80:380])).T)
+        if create_undersampled_data:
+            print (f"Creating under sampled data")
+            importlib.reload(stgeorges_utils)
+            
+            acq_data_us = create_gaussian_variable_density_kspace_data(
+                am['fs']['data'],
+                acceleration_factor=acceleration_factor
+            )
+            am['us'] = {'data': acq_data_us}
+            # Get the Coil Sensitivity Maps (CSM) from the under sampled data
+            E, csm = get_AcquisitionModel_CSM(am['us']['data'], 
+                fully_sampled=range(-13,13))
+            am['us']['am'] = E
+            am['us']['csm'] = csm
+    else:
+        # sparse acquisition
+        print ("Processing AI dataset")
+        which = 'ai'
+        am[which] = {'am': None, 'csm': None, 'data':  acq_data}
+        # Get the Coil Sensitivity Maps (CSM) from the sparse (AI) data
+        E, csm = get_AcquisitionModel_CSM(am['ai']['data'], fully_sampled=range(-13,13))
+        am[which]['am'] = E
+        am[which]['csm'] = csm
+
 
 # %%
-# sum_us = np.sum(np.abs(acq_data_us.asarray().ravel()))
-# print(f"Sum of Undersampled data: {sum_us}")
-# acq_data_us /= sum_us
+# Undersample fully sample data with Gaussian variable density 
 
-E, csm = get_AcquisitionModel_CSM(acq_data_us, fully_sampled=range(-13,13))
-am['us']['am'] = E
-am['us']['csm'] = csm
+#%%
+def plot_kspace_lines_memory(imgs, title=None):
+    # Visualise images
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(1,len(imgs))
+    for idx, acq_data in enumerate(imgs):
+        ky_index = np.unique(acq_data.get_ISMRMRD_info('kspace_encode_step_1'))
+        ky_index_max = np.max(ky_index)
+        sampling_mask = np.zeros((ky_index_max+1,ky_index_max+1))
+        sampling_mask[ky_index,:] = 1
+        ax[idx].imshow(sampling_mask, vmin=0, vmax=1)
+        if title is not None and len(title) == len(imgs):
+            print(f"add title {title[idx]}")
+            ax[idx].set_title(title[idx])
+#%%
+# Plot the klines
+%load_ext autoreload
+%autoreload 2
+
+import importlib
+import stgeorges_utils
+
+importlib.reload(stgeorges_utils)
+from stgeorges_utils import plot_kspace_lines_memory
+#%%
+plot_kylines = []
+what_to_plot = ['fs', 'ai', 'us']
+for which in what_to_plot:
+    if which in am.keys():
+        plot_kylines.append(am[which]['data'])
+plot_kspace_lines_memory(plot_kylines, title=what_to_plot)
+
 
 #%%
 # Data should be normalised now
@@ -279,7 +323,7 @@ start_new = True
 from SIRFWavelets import FunctionOfAbs, SIRFWaveletOperator
 
 for k,v in am.items():
-    if k in ['fs', 'us']:
+    if k in ['fs', 'ai']:
         logger.info(f"Skipping {k}")
         continue
     logger.info(f"Processing {k}")
@@ -301,7 +345,7 @@ for k,v in am.items():
     G = alpha * FunctionOfAbs(l1s)
     
     logger.info(f"LS {f(x_init)}")
-    logger.info(f"TV {G(x_init)}")
+    logger.info(f"Regulariser {G(x_init)}")
     # add logger callback to FISTA
 
 
@@ -319,7 +363,7 @@ for k,v in am.items():
     
 #%%
 import matplotlib.pyplot as plt
-plt.plot(am['us']['algo'].loss)
+plt.plot(am['ai']['algo'].loss)
 plt.xlabel('Iteration')
 plt.ylabel('Loss')
 plt.title('Loss Curve for Undersampled LS+Wavelet Reconstruction')
@@ -330,7 +374,7 @@ plt.show()
 # Load Original Siemens AI reconstruction
 # Data loaded from DICOM files, exported by Slicer3D as NIfTI file
 
-siemens_ai_recon_fname = "/input/recon_MID00619_FID129157_AI_RECON_SEQD_512_GF4_AX_RL/PERSON_DICOM_siemens_ai_recon.nii"
+siemens_ai_recon_fname = "/output/recon_MID00619_FID129157_AI_RECON_SEQD_512_GF4_AX_RL/PERSON_DICOM_siemens_ai_recon.nii"
 from sirf.Reg import NiftiImageData3D
 from sirf.Gadgetron import ImageData
 siemens_ai_recon = NiftiImageData3D(siemens_ai_recon_fname)  # Load the Siemens AI reconstruction from the NIfTI file
@@ -340,7 +384,7 @@ print (siemens_ai_recon.asarray().shape)
 
 #%%
 ########## SIEMENS FULLY SAMPLED RECONSTRUCTION
-siemens_fs_recon_fname = "/input/recon_MID00614_FID129152_CONVENTIONAL_RECON_SEQD_GF2_AX_RL/PERSON_DICOM_siemens_fully_sampled.nii"
+siemens_fs_recon_fname = "/output/recon_MID00614_FID129152_CONVENTIONAL_RECON_SEQD_GF2_AX_RL/PERSON_DICOM_siemens_fully_sampled.nii"
 from sirf.Reg import NiftiImageData3D
 from sirf.Gadgetron import ImageData
 siemens_fs_recon = NiftiImageData3D(siemens_fs_recon_fname)  # Load the Siemens fully sampled reconstruction from the NIfTI file
@@ -358,40 +402,38 @@ show2D([siemens_rebinned_recon], title=['Siemens AI recon'])
 show2D([np.squeeze(np.abs(x_recon.asarray()[11,110:410, 80:380])).T,
         siemens_rebinned_recon, 
         np.squeeze(np.abs(am['ai']['algo'].solution.asarray()[11,110:410, 80:380])).T,
-        np.squeeze(np.abs(am['us']['algo'].solution.asarray()[11,110:410, 80:380])).T],
+        # np.squeeze(np.abs(am['us']['algo'].solution.asarray()[11,110:410, 80:380])).T
+        ],
        title=['Fully Sampled', 
               'Siemens AI recon', 
               f'AI data +{am["ai"]["alpha"]}Wavelet',
-              f'Undersampled LS+{am['us']['alpha']}Wavelet'])
+            #   f'Undersampled LS+{am['us']['alpha']}Wavelet'
+              ])
 
-#%%
-import matplotlib.pyplot as plt
-plt.plot(am['us']['algo'].loss)
-plt.xlabel('Iteration')
-plt.ylabel('Loss')
-plt.title('Loss Curve for Undersampled LS+TV Reconstruction')
-plt.show()
+
 #%%
 #####################
-
-recon = x_recon
-title = 'Fully Sampled'
-
-recon = am['us']['algo'].solution
-title = f'Undersampled LS+ {am["us"]["alpha"]} Wavelet'
-vdata = np.squeeze(np.abs(recon.asarray()[11,110:410, 80:380])).T
-
-recon = am['ai']['algo'].solution
-title = f'AI data LS+ {am["ai"]["alpha"]} Wavelet'
-vdata = np.squeeze(np.abs(recon.asarray()[11,110:410, 80:380])).T
-
-recon = siemens_rebinned_recon
-title = 'Siemens AI recon'
-vdata = siemens_rebinned_recon
-
-recon = siemens_fs_recon
-title = 'Siemens Fully Sampled recon'
-vdata = siemens_fs_recon
+which = 'siemens_fs'
+if which == 'fs':
+    recon = x_recon
+    title = 'Fully Sampled'
+    vdata = np.squeeze(np.abs(recon.asarray()[11,110:410, 80:380])).T
+elif which == 'us':
+    recon = am['us']['algo'].solution
+    title = f'Undersampled LS+ {am["us"]["alpha"]} Wavelet'
+    vdata = np.squeeze(np.abs(recon.asarray()[11,110:410, 80:380])).T
+elif which == 'ai':
+    recon = am['ai']['algo'].solution
+    title = f'AI data LS+ {am["ai"]["alpha"]} Wavelet'
+    vdata = np.squeeze(np.abs(recon.asarray()[11,110:410, 80:380])).T
+elif which == 'siemens_ai':
+    recon = siemens_rebinned_recon
+    title = 'Siemens AI recon'
+    vdata = siemens_rebinned_recon
+elif which == 'siemens_fs':
+    recon = siemens_fs_recon
+    title = 'Siemens Fully Sampled recon'
+    vdata = siemens_fs_recon
 # Visualise the sub-image within the whole image
 # and the size of the features we are tracking on
 from matplotlib.patches import Rectangle
@@ -420,9 +462,7 @@ plt.title(title)
 plt.show()
 
 #####################
-# %%
-show2D([np.squeeze(np.abs(el.asarray()[11,110:410, 80:380])).T for el in [am['ai']['am'].inverse(am['ai']['data']), am['ai']['algo'].solution, am['us']['am'].inverse(am['us']['data']), am['us']['algo'].solution]], 
-       title=['AI data inverse', 'AI data LS+TV', 'Undersampled inverse', 'Undersampled LS+TV'])
+
 # %%
 # histogram of acquisition data
 
@@ -437,6 +477,20 @@ sum_fs = np.sum(np.abs(am['fs']['data'].asarray().ravel()))
 print(f"Sum of AI data: {sum_ai}")
 print(f"Sum of Undersampled data: {sum_us}")
 print(f"Sum of Fully Sampled data: {sum_fs}")
+
+
+#%%
+# SAVE reconstruction to file
+
+save_ImageData_as_nii(am['ai']['algo'].solution, 'ai', output_dir='/output/nii')
+save_ImageData_as_nii(am['fs']['recon'], 'fs', output_dir='/output/nii')
+
+#%%
+# DEBUG 
+E = am['ai']['am']
+acq_data = am['ai']['data']
+x_init = E.inverse(acq_data)
+save_ImageData_as_nii(x_init, 'inverse',  output_dir='/output/nii')
 # %%
 # Clear temp dir
 # delete proc_dir
