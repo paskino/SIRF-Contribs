@@ -6,7 +6,7 @@ import numpy as np
 
 import sys
 sys.path.append("/home/jovyan/work/SIRF-Contribs/src/notebooks/AIRBI-MRI-recon/")
-from stgeorges_utils import change_ismrmrd, to_dicom_folder, LogfileCallback
+from stgeorges_utils import change_ismrmrd, LogfileCallback
 from stgeorges_utils import plot_kspace_lines_memory
 
 from sirf.Gadgetron import AcquisitionData, ImageData
@@ -28,10 +28,16 @@ import tempfile
 
 from cil.optimisation.functions import L1Sparsity
 from cil.optimisation.operators import WaveletOperator
-
+import glob
 from stgeorges_utils import rmse
 # from AbsFunction import FunctionOfAbs
-
+def save_ImageData_as_nii(recon, prefix, output_dir='/output/nii'):
+    from sirf.Reg import NiftiImageData3D
+    from sirf.Gadgetron import ImageData
+    niisolution = NiftiImageData3D(recon)
+    os.makedirs(output_dir, exist_ok=True)
+    niisolution.write(f'/output/nii/{prefix}-solution.nii')
+    print(f"Solution written to /output/nii/{prefix}-solution.nii {os.path.exists(f'/output/nii/{prefix}-solution.nii')}")
 #%%
 
 logger = logging.getLogger(__name__)
@@ -42,11 +48,12 @@ command = "siemens_to_ismrmrd"
 # input_files = ["/home/jovyan/work/person2/person2/meas_MID00595_FID133061_pd_tse_fs_cor_uflex_no_spine.dat",
 #                "/home/jovyan/work/person2/person2/meas_MID00598_FID133064_pd_tse_fs_cor_uflex_no_spine.dat"]
 
-input_files = [
-    "/input/meas_MID00614_FID129152_CONVENTIONAL_RECON_SEQD_GF2_AX_RL.dat",
-    "/input/meas_MID00723_FID128488_BOOST_SEQD_512_UFLEXL_no_spine_GF2_AX_RL_pd_tse_fs_sag.dat",
-    "/input/meas_MID00619_FID129157_AI_RECON_SEQD_512_GF4_AX_RL.dat"
-    ]
+input_files = glob.glob("/input/*.dat")
+if len(input_files) == 0:
+    exit(1, "No input file found.")
+if len(input_files) > 1:
+    exit(2, "More than one input file found.")
+
 
 proc_dir = tempfile.mkdtemp(prefix="stgeorges_proc_")
 
@@ -78,35 +85,32 @@ for fname in input_files:
 # store all data in a dictionary
 am = {}
 #%%
+# if data is fully sampled.
+acq_data = AcquisitionData(output_files[0])
+acq_data = preprocess_acquisition_data(acq_data)
+
+ky_index = np.unique(acq_data.get_ISMRMRD_info('kspace_encode_step_1'))
+ky_index_max = np.max(ky_index)
+ky_index_min = np.min(ky_index)
+#%%
+
+if np.array_equal(np.arange(ky_index_min, ky_index_max + 1), ky_index):
 # Fully sampled dataset
-ad_fs = AcquisitionData(output_files[0])
-ad_fs = preprocess_acquisition_data(ad_fs)
-am['fs'] = {'am': None, 'csm': None}
-#%%
-sum_fs = np.sum(np.abs(ad_fs.asarray().ravel()))
-# ad_fs /= sum_fs
-am['fs']['data'] = ad_fs
-
-print(f"Sum of Fully Sampled data: {sum_fs}")
-# %%
-from sirf.Gadgetron import FullySampledReconstructor
-which = "fs"
-acq_data = am[which]['data']
-recon = FullySampledReconstructor()
-recon.set_input(acq_data)
-recon.process()
-x_recon = recon.get_output()
-
-reference_rmse = np.sqrt(np.mean(x_recon.asarray()*x_recon.asarray()))
+    am['fs'] = {'am': None, 'csm': None, 'data': acq_data}
+    from sirf.Gadgetron import FullySampledReconstructor
+    which = "fs"
+    acq_data = am[which]['data']
+    recon = FullySampledReconstructor()
+    recon.set_input(acq_data)
+    recon.process()
+    x_recon = recon.get_output()
+    save_ImageData_as_nii(x_recon, prefix=which)
+    exit(0)
 #%%
 
-show2D(np.squeeze(np.abs(x_recon.asarray()[11,110:410, 80:380])).T)
 #%%
 # AI protocol
-ad_ai = AcquisitionData(output_files[1])
-ad_ai = preprocess_acquisition_data(ad_ai)
 
-sum_ai = np.sum(np.abs(ad_ai.asarray().ravel()))
 # ad_ai /= sum_ai
 print(f"Sum of AI data: {sum_ai}")
 am['ai'] = {'am': None, 'csm': None, 'data':  ad_ai}
@@ -318,12 +322,10 @@ for k,v in am.items():
 
     fista.run(num_iterations, callbacks=[ProgressCallback()])
 
-from sirf.Reg import NiftiImageData3D
-from sirf.Gadgetron import ImageData
-niisolution = NiftiImageData3D(fista.solution)
-os.makedirs('/output/nii', exist_ok=True)
-niisolution.write('/output/nii/solution.nii')
-print(f"Solution written to /output/nii/solution.nii {os.path.exists('/output/nii/solution.nii')}")
+
+
+
+save_ImageData_as_nii(fista.solution, prefix=am.keys()[0], output_dir='/output/nii')
 
 # Clear temp dir
 # delete proc_dir
