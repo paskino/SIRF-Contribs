@@ -123,7 +123,7 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 #%%
 create_undersampled_data = True
-acceleration_factor = 4
+acceleration_factor = 3
 #%%
 command = "siemens_to_ismrmrd"
 
@@ -217,20 +217,18 @@ for f in output_files:
         am[which]['csm'] = csm
 
 
-# %%
-# Undersample fully sample data with Gaussian variable density 
 
 #%%
 def plot_kspace_lines_memory(imgs, title=None):
     # Visualise images
     import matplotlib.pyplot as plt
-    fig, ax = plt.subplots(1,len(imgs))
+    fig, ax = plt.subplots(1,len(imgs), figsize=(10,5), dpi=500)
     for idx, acq_data in enumerate(imgs):
         ky_index = np.unique(acq_data.get_ISMRMRD_info('kspace_encode_step_1'))
         ky_index_max = np.max(ky_index)
         sampling_mask = np.zeros((ky_index_max+1,ky_index_max+1))
         sampling_mask[ky_index,:] = 1
-        ax[idx].imshow(sampling_mask, vmin=0, vmax=1)
+        ax[idx].imshow(sampling_mask, vmin=0, vmax=1, cmap="gray_r")
         if title is not None and len(title) == len(imgs):
             print(f"add title {title[idx]}")
             ax[idx].set_title(title[idx])
@@ -314,7 +312,9 @@ am['us']['alpha'] = 8.5e-6
 # Wavelet sparsity regularisation
 am['fs']['alpha'] = 8.5e-06
 am['ai']['alpha'] = 3e-1
-am['us']['alpha'] = 3e-6
+am['us']['alpha'] = 3e-6 # haar
+
+am['us']['alpha'] = 1e-5 # db2
 
 
 #%%
@@ -324,7 +324,7 @@ start_new = True
 from SIRFWavelets import FunctionOfAbs, SIRFWaveletOperator
 
 for k,v in am.items():
-    if k in ['fs', 'ai']:
+    if k in ['fs', 'ai' ]:
         logger.info(f"Skipping {k}")
         continue
     logger.info(f"Processing {k}")
@@ -340,8 +340,8 @@ for k,v in am.items():
     # # Tau in FISTA is 
     # tau = 0.99*2/am['us']['algo'].f.L
     # # alpha * tau ~ 2.e-5
-    alpha = 3.0e-1
-    wop = SIRFWaveletOperator(domain_geometry=x_init, level=None, wname="haar")
+
+    wop = SIRFWaveletOperator(domain_geometry=x_init, level=None, wname="db2")
     l1s = L1Sparsity(wop)
     G = alpha * FunctionOfAbs(l1s)
     
@@ -358,7 +358,7 @@ for k,v in am.items():
     else:
         fista = v['algo']
     # Run FISTA for least squares
-    v['callback'] = LogAll(rmse_reference=x_recon, plot=True)
+    v['callback'] = LogAll(rmse_reference=x_init, plot=True)
 
     fista.run(num_iterations, callbacks=[ProgressCallback(), v['callback']])
     
@@ -400,23 +400,36 @@ siemens_rebinned_recon = np.abs(np.fliplr(np.flipud(binned[110:410, 130:430,  6]
 #%%
 show2D([siemens_rebinned_recon], title=['Siemens AI recon'])
 # %%
-show2D([np.squeeze(np.abs(x_recon.asarray()[11,110:410, 80:380])).T,
+# plot on 10-98.1 percentile
+def get_percentiles(array, percentiles=(10,98.1)):
+    import numpy as np
+    mp = np.percentile(array, percentiles[0])
+    Mp = np.percentile(array, percentiles[1])
+    return (mp, Mp)
+
+#%%
+_data = [siemens_fs_recon,
         siemens_rebinned_recon, 
         np.squeeze(np.abs(am['ai']['algo'].solution.asarray()[11,110:410, 80:380])).T,
-        # np.squeeze(np.abs(am['us']['algo'].solution.asarray()[11,110:410, 80:380])).T
-        ],
-       title=['Fully Sampled', 
+        np.squeeze(np.abs(am['us']['algo'].solution.asarray()[11,110:410, 80:380])).T
+        ]
+_title = ['Fully Sampled', 
               'Siemens AI recon', 
               f'AI data +{am["ai"]["alpha"]}Wavelet',
-            #   f'Undersampled LS+{am['us']['alpha']}Wavelet'
-              ])
+              f'Undersampled LS+{am['us']['alpha']}Wavelet'
+              ]
+ranges = [get_percentiles(el) for el in _data]
+
+show2D(_data,
+       title=_title,
+       fix_range=ranges)
 
 
 #%%
 #####################
-which = 'siemens_fs'
+which = 'us'
 if which == 'fs':
-    recon = x_recon
+    recon = am[which]['recon']
     title = 'Fully Sampled'
     vdata = np.squeeze(np.abs(recon.asarray()[11,110:410, 80:380])).T
 elif which == 'us':
@@ -435,12 +448,15 @@ elif which == 'siemens_fs':
     recon = siemens_fs_recon
     title = 'Siemens Fully Sampled recon'
     vdata = siemens_fs_recon
+
+
+ranges = get_percentiles(vdata, percentiles=(10,99.3))
 # Visualise the sub-image within the whole image
 # and the size of the features we are tracking on
 from matplotlib.patches import Rectangle
 
-fig, ax = plt.subplots()
-ax.imshow(vdata, cmap='gray', origin='lower')
+fig, ax = plt.subplots(dpi=600)
+ax.imshow(vdata, cmap='gray', origin='lower', vmin=ranges[0], vmax=ranges[1])
 start = 600
 registration_p0 = (85,170)
 registration_region = 50
@@ -454,7 +470,7 @@ ax.add_patch(box)
 sax = ax.inset_axes([0, 0.5, 0.5, 0.5])
 sub_image = vdata[registration_p0[0]:registration_p0[0]+registration_region, 
                   registration_p0[1]:registration_p0[1]+registration_region]
-sax.imshow(sub_image, cmap='gray', origin='lower')
+sax.imshow(sub_image, cmap='gray', origin='lower', vmin=ranges[0], vmax=ranges[1])
 sax.get_xaxis().set_visible(False)
 sax.get_yaxis().set_visible(False)
 start = start - registration_p0[1]
