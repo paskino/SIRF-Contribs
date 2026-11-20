@@ -39,13 +39,17 @@ from cil.optimisation.operators import WaveletOperator
 
 # from AbsFunction import FunctionOfAbs
 # %%
-
-def get_AcquisitionModel_CSM(acq_data, smoothness=100, fully_sampled=True):
+# import pysnooper
+# @pysnooper.snoop()
+def get_AcquisitionModel_CSM(acq_data, smoothness=100, fully_sampled=None):
     '''Given an AcquisitionData, returns an AcquisitionModel and the CoilSensitivityData object'''
-    if fully_sampled:
+    if fully_sampled is None:
         acq_data_us = acq_data
     else:
         always_sampled = fully_sampled
+        centre_line = int((max(acq_data.get_ISMRMRD_info('kspace_encode_step_1')) + \
+                       min(acq_data.get_ISMRMRD_info('kspace_encode_step_1'))) // 2 )
+        always_sampled = [el + centre_line for el in fully_sampled]
         us_index = []
         for acq_idx, ky_idx in enumerate(acq_data.get_ISMRMRD_info('kspace_encode_step_1')):
             if ky_idx in always_sampled:
@@ -233,15 +237,44 @@ def plot_kspace_lines_memory(imgs, title=None):
             print(f"add title {title[idx]}")
             ax[idx].set_title(title[idx])
 #%%
-# Plot the klines
-%load_ext autoreload
-%autoreload 2
+import matplotlib.pyplot as plt
+import pysnooper
+# @pysnooper.snoop()
+def plot_csm(csm, sliceno, suptitle=""):
+    print (type(csm))
+    print (csm.shape, csm.as_array().shape)
+    cmsa = csm.as_array()
+    num_coils = cmsa.shape[0]
+    rows = int(np.ceil(np.sqrt(num_coils)))
+    cols = rows -1
+    fig, ax = plt.subplots(rows, cols)
+    
+    for i in range(rows):
+        for j in range(cols):
+            idx = i + rows * j
+            if idx < num_coils:
+                ax[i][j].imshow(np.abs(cmsa[idx,sliceno,:,:]))
+                ax[i][j].set_title(f"Coil {idx}")
+    fig.suptitle(suptitle)
+    # fig.tight_layout()
 
-import importlib
-import stgeorges_utils
+plot_csm(am['ai']['csm'], sliceno=6, suptitle="ai")
+plot_csm(am['us']['csm'], sliceno=6, suptitle="us")
+#%%
+for acq_idx, ky_idx in enumerate(am['us']['data'].get_ISMRMRD_info('kspace_encode_step_1')):
+    if ky_idx < 0:
+        print (f"{acq_idx} {ky_idx}")
+print ("Done")
+#%%
+# # Plot the klines
+# %load_ext autoreload
+# %autoreload 2
 
-importlib.reload(stgeorges_utils)
-from stgeorges_utils import plot_kspace_lines_memory
+# import importlib
+# import stgeorges_utils
+
+# importlib.reload(stgeorges_utils)
+# from stgeorges_utils import plot_kspace_lines_memory
 #%%
 plot_kylines = []
 what_to_plot = ['fs', 'ai', 'us']
@@ -261,7 +294,8 @@ print(f"Sum of Undersampled data: {sum_us}")
 print(f"Sum of Fully Sampled data: {sum_fs}")
 
 #%%
-from cil.optimisation.utilities.callbacks import Callback, ProgressCallback
+from cil.optimisation.utilities.callbacks import Callback, ProgressCallback 
+from cil.optimisation.utilities.callbacks import EarlyStoppingObjectiveValue
 class LogAll(Callback):
     def __init__(self, interval=1, rmse_reference=None, rmse_border=20, plot=False):
         self.interval = interval
@@ -314,7 +348,7 @@ am['fs']['alpha'] = 8.5e-06
 am['ai']['alpha'] = 3e-1
 am['us']['alpha'] = 3e-6 # haar
 
-am['us']['alpha'] = 1e-5 # db2
+am['us']['alpha'] = 7e-6 # db2
 
 
 #%%
@@ -324,7 +358,7 @@ start_new = True
 from SIRFWavelets import FunctionOfAbs, SIRFWaveletOperator
 
 for k,v in am.items():
-    if k in ['fs', 'ai' ]:
+    if k in ['fs', 'ai']:
         logger.info(f"Skipping {k}")
         continue
     logger.info(f"Processing {k}")
@@ -360,11 +394,13 @@ for k,v in am.items():
     # Run FISTA for least squares
     v['callback'] = LogAll(rmse_reference=x_init, plot=True)
 
-    fista.run(num_iterations, callbacks=[ProgressCallback(), v['callback']])
+    fista.run(num_iterations, callbacks=[ProgressCallback(), 
+                                         v['callback'], 
+                                         EarlyStoppingObjectiveValue(threshold=1e-6)])
     
 #%%
 import matplotlib.pyplot as plt
-plt.plot(am['ai']['algo'].loss)
+plt.plot(am['us']['algo'].loss)
 plt.xlabel('Iteration')
 plt.ylabel('Loss')
 plt.title('Loss Curve for Undersampled LS+Wavelet Reconstruction')
@@ -427,7 +463,7 @@ show2D(_data,
 
 #%%
 #####################
-which = 'us'
+which = 'ai'
 if which == 'fs':
     recon = am[which]['recon']
     title = 'Fully Sampled'
