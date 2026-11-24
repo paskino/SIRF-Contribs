@@ -51,7 +51,6 @@ def get_AcquisitionModel_CSM(acq_data, fully_sampled=None, smoothness=100, s_nit
     fully_sampled: None or list/tuple of ints, default None.
         If specified, the integers in the list should specify a contiguous range of acquisition
         k-space lines that are fully sampled
-    smoothness: int, default 100. Passed as the smoothness parameter of the CoilSensitivityData object
     s_nit: int positive, default 0. Number of smoothing iterations to suppress noise
     s_khs: int, default 1. Convolution kernel half size 
     '''
@@ -72,10 +71,8 @@ def get_AcquisitionModel_CSM(acq_data, fully_sampled=None, smoothness=100, s_nit
 
     
     csm = CoilSensitivityData()
-    csm.smoothness = smoothness
     csm.smoothing_iterations = s_nit
     csm.conv_kernel_halfsize = s_ckhs
-    logger.info(f"Smoothness {csm.smoothness}")
     logger.info(f"smoothing iterations {csm.smoothing_iterations}")
     logger.info(f"convolution kernel half size {csm.conv_kernel_halfsize}")
     csm.calculate(acq_data_us)
@@ -185,11 +182,11 @@ for fname in input_files:
 #%%
 # store all data in a dictionary
 am = {}
-
+csms = {}
 #%%
-smoothness = 100
-nits = 0
+nits = 100
 ckhs = 1
+dpars = (nits, ckhs)
 for f in output_files:
     print(f"Processing {os.path.basename(f)}")
     acq_data = AcquisitionData(f)
@@ -228,7 +225,6 @@ for f in output_files:
             # Get the Coil Sensitivity Maps (CSM) from the under sampled data
             E, csm = get_AcquisitionModel_CSM(am['us']['data'], 
                 fully_sampled=range(-13,13), 
-                smoothness=smoothness, 
                 s_ckhs=ckhs, 
                 s_nit=nits)
             am['us']['am'] = E
@@ -240,14 +236,16 @@ for f in output_files:
         am[which] = {'am': None, 'csm': None, 'data':  acq_data}
         # Get the Coil Sensitivity Maps (CSM) from the sparse (AI) data
         E, csm = get_AcquisitionModel_CSM(am['ai']['data'], 
-                                          fully_sampled=range(-13,13), 
-                                          smoothness=smoothness, 
+                                          fully_sampled=range(-13,13),
                                           s_ckhs=ckhs, 
                                           s_nit=nits)
         am[which]['am'] = E
         am[which]['csm'] = csm
 
-
+csms[f"nits {dpars[0]} ckhs {dpars[1]}"] = {
+    'ai' : am['ai']['csm'],
+    'us' : am['us']['csm'],
+    }
 
 #%%
 def plot_kspace_lines_memory(imgs, title=None):
@@ -286,28 +284,52 @@ def plot_csm(csm, sliceno, suptitle="", pars=None):
                 ax[i][j].set_title(f"Coil {idx}")
     
     if pars is not None:
-        dtitle = f"{suptitle}, nits {pars[0]} ckhs {pars[1]} smoothness {pars[2]}"
+        dtitle = f"{suptitle}, nits {pars[0]} ckhs {pars[1]}"
     else:
         dtitle = f"{suptitle}"
     fig.suptitle(dtitle)
     # fig.tight_layout()
 
+def best_subplot_grid(n, max_aspect=2.0):
+    candidates = []
+    for cols in range(1, int(np.ceil(np.sqrt(n))) + 1):
+        rows = int(np.ceil(n / cols))
+        if rows >= cols:
+            blanks = rows * cols - n
+            aspect = rows / cols
+            candidates.append((aspect > max_aspect, blanks, aspect, rows, cols))
+            # min() on a list of tuples returns one tuple from the list, chosen by lexicographical (left-to-right) comparison:
+    _, _, _, rows, cols = min(candidates)
+    return rows, cols
+
+def plot_csms(csms, slice_num, coil_num, data_type="ai", tight_layout=False):
+    
+    rows, cols = best_subplot_grid(len(csms))
+    
+    fig, ax = plt.subplots(rows, cols, dpi=500)
+    axes = ax.ravel()
+
+    i = 0
+    for k,v in csms.items():
+        csm = v[data_type]
+        cmsa = csm.as_array()
+        axes[i].imshow(np.abs(cmsa[coil_num,slice_num,:,:]))
+        axes[i].set_title(f"{k}")
+        axes[i].axes.get_xaxis().set_ticks([])
+        axes[i].axes.get_yaxis().set_ticks([])
+        i += 1
+
+    suptitle = f"Coil {coil_num}, Slice {slice_num}, "
+    fig.suptitle(suptitle)
+    if tight_layout:
+        fig.tight_layout()
 #%%
-dpars = (nits, ckhs, smoothness)
+# plot all coils for this CSM configuration
 plot_csm(am['ai']['csm'], sliceno=6, suptitle="ai", pars=dpars)
 plot_csm(am['us']['csm'], sliceno=6, suptitle="us", pars=dpars)
 #%%
-csms = {}
-#%%
-csms[f"nits {dpars[0]} ckhs {dpars[1]}"] = {
-    'ai' : am['ai']['csm'],
-    'us' : am['us']['csm'],
-    }
-#%%
-for acq_idx, ky_idx in enumerate(am['us']['data'].get_ISMRMRD_info('kspace_encode_step_1')):
-    if ky_idx < 0:
-        print (f"{acq_idx} {ky_idx}")
-print ("Done")
+plot_csms(csms, coil_num=6, slice_num=6, data_type="us")
+
 #%%
 # # Plot the klines
 # %load_ext autoreload
@@ -396,7 +418,7 @@ am['us']['alpha'] = 7e-6 # db2
 
 #%%
 # Define our objective/loss function as least squares between Ex and y
-num_iterations = 10
+num_iterations = 70
 start_new = True
 from SIRFWavelets import FunctionOfAbs, SIRFWaveletOperator
 
