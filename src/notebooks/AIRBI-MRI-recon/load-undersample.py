@@ -4,6 +4,7 @@ import os
 import logging
 import numpy as np
 import importlib
+import matplotlib.pyplot as plt
 
 #### StGeorges Utils
 import sys
@@ -41,8 +42,19 @@ from cil.optimisation.operators import WaveletOperator
 # %%
 # import pysnooper
 # @pysnooper.snoop()
-def get_AcquisitionModel_CSM(acq_data, smoothness=100, fully_sampled=None):
-    '''Given an AcquisitionData, returns an AcquisitionModel and the CoilSensitivityData object'''
+def get_AcquisitionModel_CSM(acq_data, fully_sampled=None, smoothness=100, s_nit=0, s_ckhs=1):
+    '''Given an AcquisitionData, returns an AcquisitionModel and the CoilSensitivityData object
+    
+    Parameters:
+    -----------
+    acq_data: AcquisitionData
+    fully_sampled: None or list/tuple of ints, default None.
+        If specified, the integers in the list should specify a contiguous range of acquisition
+        k-space lines that are fully sampled
+    smoothness: int, default 100. Passed as the smoothness parameter of the CoilSensitivityData object
+    s_nit: int positive, default 0. Number of smoothing iterations to suppress noise
+    s_khs: int, default 1. Convolution kernel half size 
+    '''
     if fully_sampled is None:
         acq_data_us = acq_data
     else:
@@ -61,6 +73,11 @@ def get_AcquisitionModel_CSM(acq_data, smoothness=100, fully_sampled=None):
     
     csm = CoilSensitivityData()
     csm.smoothness = smoothness
+    csm.smoothing_iterations = s_nit
+    csm.conv_kernel_halfsize = s_ckhs
+    logger.info(f"Smoothness {csm.smoothness}")
+    logger.info(f"smoothing iterations {csm.smoothing_iterations}")
+    logger.info(f"convolution kernel half size {csm.conv_kernel_halfsize}")
     csm.calculate(acq_data_us)
     
     E = AcquisitionModel(acqs=acq_data, imgs=csm)
@@ -170,6 +187,9 @@ for fname in input_files:
 am = {}
 
 #%%
+smoothness = 100
+nits = 0
+ckhs = 1
 for f in output_files:
     print(f"Processing {os.path.basename(f)}")
     acq_data = AcquisitionData(f)
@@ -207,7 +227,10 @@ for f in output_files:
             am['us'] = {'data': acq_data_us}
             # Get the Coil Sensitivity Maps (CSM) from the under sampled data
             E, csm = get_AcquisitionModel_CSM(am['us']['data'], 
-                fully_sampled=range(-13,13))
+                fully_sampled=range(-13,13), 
+                smoothness=smoothness, 
+                s_ckhs=ckhs, 
+                s_nit=nits)
             am['us']['am'] = E
             am['us']['csm'] = csm
     else:
@@ -216,7 +239,11 @@ for f in output_files:
         which = 'ai'
         am[which] = {'am': None, 'csm': None, 'data':  acq_data}
         # Get the Coil Sensitivity Maps (CSM) from the sparse (AI) data
-        E, csm = get_AcquisitionModel_CSM(am['ai']['data'], fully_sampled=range(-13,13))
+        E, csm = get_AcquisitionModel_CSM(am['ai']['data'], 
+                                          fully_sampled=range(-13,13), 
+                                          smoothness=smoothness, 
+                                          s_ckhs=ckhs, 
+                                          s_nit=nits)
         am[which]['am'] = E
         am[which]['csm'] = csm
 
@@ -240,14 +267,16 @@ def plot_kspace_lines_memory(imgs, title=None):
 import matplotlib.pyplot as plt
 import pysnooper
 # @pysnooper.snoop()
-def plot_csm(csm, sliceno, suptitle=""):
+def plot_csm(csm, sliceno, suptitle="", pars=None):
     print (type(csm))
     print (csm.shape, csm.as_array().shape)
     cmsa = csm.as_array()
     num_coils = cmsa.shape[0]
-    rows = int(np.ceil(np.sqrt(num_coils)))
-    cols = rows -1
-    fig, ax = plt.subplots(rows, cols)
+    # rows = int(np.ceil(np.sqrt(num_coils)))
+    # cols = rows -1
+    rows = 6
+    cols = 3
+    fig, ax = plt.subplots(rows, cols, dpi=500)
     
     for i in range(rows):
         for j in range(cols):
@@ -255,11 +284,25 @@ def plot_csm(csm, sliceno, suptitle=""):
             if idx < num_coils:
                 ax[i][j].imshow(np.abs(cmsa[idx,sliceno,:,:]))
                 ax[i][j].set_title(f"Coil {idx}")
-    fig.suptitle(suptitle)
+    
+    if pars is not None:
+        dtitle = f"{suptitle}, nits {pars[0]} ckhs {pars[1]} smoothness {pars[2]}"
+    else:
+        dtitle = f"{suptitle}"
+    fig.suptitle(dtitle)
     # fig.tight_layout()
 
-plot_csm(am['ai']['csm'], sliceno=6, suptitle="ai")
-plot_csm(am['us']['csm'], sliceno=6, suptitle="us")
+#%%
+dpars = (nits, ckhs, smoothness)
+plot_csm(am['ai']['csm'], sliceno=6, suptitle="ai", pars=dpars)
+plot_csm(am['us']['csm'], sliceno=6, suptitle="us", pars=dpars)
+#%%
+csms = {}
+#%%
+csms[f"nits {dpars[0]} ckhs {dpars[1]}"] = {
+    'ai' : am['ai']['csm'],
+    'us' : am['us']['csm'],
+    }
 #%%
 for acq_idx, ky_idx in enumerate(am['us']['data'].get_ISMRMRD_info('kspace_encode_step_1')):
     if ky_idx < 0:
@@ -358,7 +401,7 @@ start_new = True
 from SIRFWavelets import FunctionOfAbs, SIRFWaveletOperator
 
 for k,v in am.items():
-    if k in ['fs', 'ai']:
+    if k in ['fs', 'us']:
         logger.info(f"Skipping {k}")
         continue
     logger.info(f"Processing {k}")
@@ -400,7 +443,7 @@ for k,v in am.items():
     
 #%%
 import matplotlib.pyplot as plt
-plt.plot(am['us']['algo'].loss)
+plt.plot(am['us']['algo'].loss[4:])
 plt.xlabel('Iteration')
 plt.ylabel('Loss')
 plt.title('Loss Curve for Undersampled LS+Wavelet Reconstruction')
