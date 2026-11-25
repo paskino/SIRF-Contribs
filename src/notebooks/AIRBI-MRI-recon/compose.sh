@@ -25,9 +25,13 @@ case "$COMMAND" in
     jupyter)
         fix_symlink
         echo "Starting Jupyter Notebook in the background..."
-        export START_CMD=""
+        export START_CMD="start-notebook.py"
         docker compose build
-        docker compose up -d
+        docker compose up -d --force-recreate
+        echo "Waiting for Jupyter to start..."
+        sleep 5
+        echo "Here are your Jupyter Notebook URLs:"
+        docker compose logs sirf-mri-recon | grep -i "http://127.0.0.1:8888"
         ;;
     rebuild)
         fix_symlink

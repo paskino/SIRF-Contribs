@@ -121,7 +121,8 @@ for f in output_files:
         recon.process()
         # store the reconstruction
         am[which]['recon'] = recon.get_output()
-        # save_ImageData_as_nii(x_recon, prefix=which)
+        save_ImageData_as_nii(am[which]['recon'], prefix=which, output_dir='/output/nii')
+        am[which]['recon'].write(f'/output/nii/{which}/{which}-recon.h5')
         # show2D(np.squeeze(np.abs(x_recon.asarray()[11,110:410, 80:380])).T)
         if create_undersampled_data:
             print (f"Creating under sampled data")
@@ -284,6 +285,7 @@ for k,v in am.items():
     # SAVE reconstruction to file
     prefix = k
     save_ImageData_as_nii(fista.solution, prefix=prefix, output_dir='/output/nii')
+    fista.solution.write(f'/output/nii/{prefix}/{prefix}-solution.h5')
     import json
     try:
         with open(f'/output/nii/{prefix}/{prefix}-config.json', 'w') as f:
