@@ -339,8 +339,9 @@ def save_ImageData_as_nii(recon, prefix, output_dir='/output/nii'):
     pixel_data = pixel_data / pixel_data.max() * np.iinfo(np.uint16).max
 
     niisolution = NiftiImageData3D(pixel_data)
-    os.makedirs(os.path.join(output_dir, prefix), exist_ok=True)
-    ofname = f'/output/nii/{prefix}/{prefix}-solution.nii'
+    savedir = os.path.join(output_dir, prefix)
+    os.makedirs(savedir, exist_ok=True)
+    ofname = os.path.join(savedir, f'{prefix}-solution.nii')
     niisolution.write(ofname)
     logger.info(f"Solution written to {ofname} {os.path.exists(ofname)}")
 
