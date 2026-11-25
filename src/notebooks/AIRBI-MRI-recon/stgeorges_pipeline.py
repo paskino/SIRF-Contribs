@@ -94,7 +94,7 @@ for fname in input_files:
 # store all data in a dictionary
 am = {}
 #%%
-nits = 100
+nits = 0
 ckhs = 1
 dpars = (nits, ckhs)
 for f in output_files:
@@ -139,6 +139,7 @@ for f in output_files:
                 s_nit=nits)
             am['us']['am'] = E
             am['us']['csm'] = csm
+            am['us']['filename'] = os.path.basename(f)
     else:
         # sparse acquisition
         print ("Processing AI dataset")
@@ -151,6 +152,20 @@ for f in output_files:
                                           s_nit=nits)
         am[which]['am'] = E
         am[which]['csm'] = csm
+        am[which]['filename'] = os.path.basename(f)
+
+
+# Clear temp dir
+# delete proc_dir
+if os.path.exists(proc_dir):
+    logger.info(f"Deleting temporary processing directory {proc_dir}...")
+    try:
+        for fname in os.listdir(proc_dir):
+            os.remove(os.path.join(proc_dir, fname))
+        os.rmdir(proc_dir)
+        logger.info("Temporary processing directory deleted successfully.")
+    except Exception as e:
+        logger.error(f"Error deleting temporary processing directory: {e}")
 
 #%%
 # DATA is not normalised. Print the sum of the absolute values of the data for each dataset to check the scale
@@ -218,7 +233,7 @@ am['us']['alpha'] = 3e-6
 
 #%%
 # Define our objective/loss function as least squares between Ex and y
-num_iterations = 70
+num_iterations = 2
 start_new = True
 from SIRFWavelets import FunctionOfAbs, SIRFWaveletOperator
 
@@ -261,13 +276,13 @@ for k,v in am.items():
 
     fista.run(num_iterations, callbacks=[ProgressCallback(), 
                                         #  v['callback'], 
-                                         EarlyStoppingObjectiveValue(threshold=1e-5)])
+                                         EarlyStoppingObjectiveValue(threshold=1e-6)])
     
 
 
 
     # SAVE reconstruction to file
-    prefix = am/keys()[0]
+    prefix = k
     save_ImageData_as_nii(fista.solution, prefix=prefix, output_dir='/output/nii')
     import json
     try:
@@ -278,7 +293,7 @@ for k,v in am.items():
                     'type': prefix,
                     'alpha': alpha,
                     'csm_nits': nits,
-                    'csm_ckhs': csm_ckhs}, f)
+                    'csm_ckhs': ckhs}, f)
     except Exception as e:
         logger.error(f"Error saving config file: {e}")
 

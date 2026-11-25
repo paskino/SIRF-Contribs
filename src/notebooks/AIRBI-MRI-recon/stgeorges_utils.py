@@ -2,6 +2,7 @@ import ismrmrd
 import os
 from sirf.Gadgetron import ImageData
 from sirf.Gadgetron import CoilSensitivityData
+from sirf.Gadgetron import AcquisitionModel
 from cil.optimisation.utilities.callbacks import Callback
 import math
 from skimage.metrics import mean_squared_error
