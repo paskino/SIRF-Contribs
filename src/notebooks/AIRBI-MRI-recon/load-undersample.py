@@ -302,7 +302,7 @@ def best_subplot_grid(n, max_aspect=2.0):
     _, _, _, rows, cols = min(candidates)
     return rows, cols
 
-def plot_csms(csms, slice_num, coil_num, data_type="ai", tight_layout=False):
+def plot_csms(csms, slice_num, coil_num, suptitle=None, data_type="ai", tight_layout=False):
     
     rows, cols = best_subplot_grid(len(csms))
     
@@ -319,8 +319,9 @@ def plot_csms(csms, slice_num, coil_num, data_type="ai", tight_layout=False):
         axes[i].axes.get_yaxis().set_ticks([])
         i += 1
 
-    suptitle = f"Coil {coil_num}, Slice {slice_num}, "
-    fig.suptitle(suptitle)
+    dtitle = f"Coil {coil_num}, Slice {slice_num}, "
+    
+    fig.suptitle(f"{dtitle} {suptitle}")
     if tight_layout:
         fig.tight_layout()
 #%%
@@ -423,7 +424,7 @@ start_new = True
 from SIRFWavelets import FunctionOfAbs, SIRFWaveletOperator
 
 for k,v in am.items():
-    if k in ['fs', 'us']:
+    if k in ['fs']:
         logger.info(f"Skipping {k}")
         continue
     logger.info(f"Processing {k}")
