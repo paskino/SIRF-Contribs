@@ -4,7 +4,7 @@ USER jovyan
 RUN pip install pydicom
 RUN pip install ismrmrd
 RUN pip install nii2dcm
-RUN conda install scikit-image -y
+# RUN conda install scikit-image -y
 
 # RUN git clone --branch downsampled-MRI-recon-stgeorge --depth 1 https://github.com/paskino/SIRF-Contribs.git
 

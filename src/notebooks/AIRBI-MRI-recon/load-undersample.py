@@ -248,6 +248,18 @@ csms[f"nits {dpars[0]} ckhs {dpars[1]}"] = {
     }
 
 #%%
+def best_subplot_grid(n, max_aspect=2.0):
+    candidates = []
+    for cols in range(1, int(np.ceil(np.sqrt(n))) + 1):
+        rows = int(np.ceil(n / cols))
+        if rows >= cols:
+            blanks = rows * cols - n
+            aspect = rows / cols
+            candidates.append((aspect > max_aspect, blanks, aspect, rows, cols))
+            # min() on a list of tuples returns one tuple from the list, chosen by lexicographical (left-to-right) comparison:
+    _, _, _, rows, cols = min(candidates)
+    return rows, cols
+
 def plot_kspace_lines_memory(imgs, title=None):
     # Visualise images
     import matplotlib.pyplot as plt
@@ -262,48 +274,61 @@ def plot_kspace_lines_memory(imgs, title=None):
             print(f"add title {title[idx]}")
             ax[idx].set_title(title[idx])
 #%%
-import matplotlib.pyplot as plt
-import pysnooper
-# @pysnooper.snoop()
-def plot_csm(csm, sliceno, suptitle="", pars=None):
-    print (type(csm))
-    print (csm.shape, csm.as_array().shape)
+
+
+
+def plot_csm(csm, slice_num, suptitle="", tight_layout=False):
+    """
+    Plot the coil sensitivity maps (CSM) for a given slice.
+
+    Parameters:
+    -----------
+    csm: CoilSensitivityData
+        The coil sensitivity maps to be plotted.
+    slice_num: int
+        The slice number to be plotted.
+    suptitle: str, optional
+        The title for the entire figure. Default is an empty string.
+    tight_layout: bool, optional
+        Whether to use tight layout. Default is False.
+    """
     cmsa = csm.as_array()
     num_coils = cmsa.shape[0]
-    # rows = int(np.ceil(np.sqrt(num_coils)))
-    # cols = rows -1
-    rows = 6
-    cols = 3
+    rows, cols = best_subplot_grid(num_coils)
     fig, ax = plt.subplots(rows, cols, dpi=500)
     
     for i in range(rows):
         for j in range(cols):
             idx = i + rows * j
             if idx < num_coils:
-                ax[i][j].imshow(np.abs(cmsa[idx,sliceno,:,:]))
+                ax[i][j].imshow(np.abs(cmsa[idx,slice_num,:,:]))
                 ax[i][j].set_title(f"Coil {idx}")
     
-    if pars is not None:
-        dtitle = f"{suptitle}, nits {pars[0]} ckhs {pars[1]}"
-    else:
-        dtitle = f"{suptitle}"
-    fig.suptitle(dtitle)
-    # fig.tight_layout()
+    fig.suptitle(suptitle)
+    if tight_layout:
+        fig.tight_layout()
 
-def best_subplot_grid(n, max_aspect=2.0):
-    candidates = []
-    for cols in range(1, int(np.ceil(np.sqrt(n))) + 1):
-        rows = int(np.ceil(n / cols))
-        if rows >= cols:
-            blanks = rows * cols - n
-            aspect = rows / cols
-            candidates.append((aspect > max_aspect, blanks, aspect, rows, cols))
-            # min() on a list of tuples returns one tuple from the list, chosen by lexicographical (left-to-right) comparison:
-    _, _, _, rows, cols = min(candidates)
-    return rows, cols
+
 
 def plot_csms(csms, slice_num, coil_num, suptitle=None, data_type="ai", tight_layout=False):
-    
+    """
+    Plot several coil sensitivity maps (CSM) for a given slice.
+
+    Parameters:
+    -----------
+    csms: dict
+        A dictionary containing the coil sensitivity maps to be plotted.
+    slice_num: int
+        The slice number to be plotted.
+    coil_num: int
+        The coil number to be plotted.
+    suptitle: str, optional
+        The title for the entire figure. Default is an empty string.
+    data_type: str, optional
+        The type of data to be plotted. Default is "ai".
+    tight_layout: bool, optional
+        Whether to use tight layout. Default is False.
+    """
     rows, cols = best_subplot_grid(len(csms))
     
     fig, ax = plt.subplots(rows, cols, dpi=500)
@@ -326,8 +351,8 @@ def plot_csms(csms, slice_num, coil_num, suptitle=None, data_type="ai", tight_la
         fig.tight_layout()
 #%%
 # plot all coils for this CSM configuration
-plot_csm(am['ai']['csm'], sliceno=6, suptitle="ai", pars=dpars)
-plot_csm(am['us']['csm'], sliceno=6, suptitle="us", pars=dpars)
+plot_csm(am['ai']['csm'], slice_num=6, suptitle=f"ai nits {nits} ckhs {ckhs}")
+plot_csm(am['us']['csm'], slice_num=6, suptitle=f"us nits {nits} ckhs {ckhs}")
 #%%
 plot_csms(csms, coil_num=6, slice_num=6, data_type="us")
 

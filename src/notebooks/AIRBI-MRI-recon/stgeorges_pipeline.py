@@ -3,12 +3,22 @@ import subprocess
 import os
 import logging
 import numpy as np
+import importlib
+import matplotlib.pyplot as plt
+import glob
 
+#### StGeorges Utils
 import sys
 sys.path.append("/home/jovyan/work/SIRF-Contribs/src/notebooks/AIRBI-MRI-recon/")
-from stgeorges_utils import change_ismrmrd, LogfileCallback
+import stgeorges_utils
+from stgeorges_utils import change_ismrmrd, to_dicom_folder, LogfileCallback
 from stgeorges_utils import plot_kspace_lines_memory
+from stgeorges_utils import rmse
+from stgeorges_utils import get_AcquisitionModel_CSM
+from stgeorges_utils import save_ImageData_as_nii
+from stgeorges_utils import create_gaussian_variable_density_kspace_data
 
+# SIRF
 from sirf.Gadgetron import AcquisitionData, ImageData
 from sirf.Gadgetron import AcquisitionModel
 from sirf.Gadgetron import AcquisitionDataProcessor
@@ -16,6 +26,7 @@ from sirf.Gadgetron import CartesianGRAPPAReconstructor, FullySampledReconstruct
 from sirf.Gadgetron import CoilSensitivityData
 from sirf.Gadgetron import preprocess_acquisition_data
 
+# CIL
 from cil.optimisation.functions import LeastSquares
 from cil.optimisation.functions import ZeroFunction
 from cil.optimisation.algorithms import FISTA, CGLS, GD
@@ -23,26 +34,24 @@ from cil.plugins.ccpi_regularisation.functions import FGP_TV
 from cil.framework import DataContainer as cilDataContainer
 from cil.optimisation.operators import LinearOperator
 from cil.optimisation.utilities.callbacks import ProgressCallback, TextProgressCallback
+from cil.optimisation.utilities.callbacks import Callback 
+from cil.optimisation.utilities.callbacks import EarlyStoppingObjectiveValue
 from cil.utilities.display import show2D
 import tempfile
 
 from cil.optimisation.functions import L1Sparsity
 from cil.optimisation.operators import WaveletOperator
-import glob
-from stgeorges_utils import rmse
-# from AbsFunction import FunctionOfAbs
-def save_ImageData_as_nii(recon, prefix, output_dir='/output/nii'):
-    from sirf.Reg import NiftiImageData3D
-    from sirf.Gadgetron import ImageData
-    niisolution = NiftiImageData3D(recon)
-    os.makedirs(output_dir, exist_ok=True)
-    niisolution.write(f'/output/nii/{prefix}-solution.nii')
-    print(f"Solution written to /output/nii/{prefix}-solution.nii {os.path.exists(f'/output/nii/{prefix}-solution.nii')}")
+
 #%%
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
+# CONFIGURATION
+create_undersampled_data = True
+acceleration_factor = 3
+
+# DATA IMPORT AND PREPROCESSING
 command = "siemens_to_ismrmrd"
 
 # input_files = ["/home/jovyan/work/person2/person2/meas_MID00595_FID133061_pd_tse_fs_cor_uflex_no_spine.dat",
@@ -51,8 +60,8 @@ command = "siemens_to_ismrmrd"
 input_files = glob.glob("/input/*.dat")
 if len(input_files) == 0:
     exit(1, "No input file found.")
-if len(input_files) > 1:
-    exit(2, "More than one input file found.")
+# if len(input_files) > 1:
+#     exit(2, "More than one input file found.")
 
 
 proc_dir = tempfile.mkdtemp(prefix="stgeorges_proc_")
@@ -85,142 +94,72 @@ for fname in input_files:
 # store all data in a dictionary
 am = {}
 #%%
-# if data is fully sampled.
-acq_data = AcquisitionData(output_files[0])
-acq_data = preprocess_acquisition_data(acq_data)
-
-ky_index = np.unique(acq_data.get_ISMRMRD_info('kspace_encode_step_1'))
-ky_index_max = np.max(ky_index)
-ky_index_min = np.min(ky_index)
-#%%
-
-if np.array_equal(np.arange(ky_index_min, ky_index_max + 1), ky_index):
-# Fully sampled dataset
-    am['fs'] = {'am': None, 'csm': None, 'data': acq_data}
-    from sirf.Gadgetron import FullySampledReconstructor
-    which = "fs"
-    acq_data = am[which]['data']
-    recon = FullySampledReconstructor()
-    recon.set_input(acq_data)
-    recon.process()
-    x_recon = recon.get_output()
-    save_ImageData_as_nii(x_recon, prefix=which)
-    exit(0)
-#%%
-
-#%%
-# AI protocol
-
-# ad_ai /= sum_ai
-print(f"Sum of AI data: {sum_ai}")
-am['ai'] = {'am': None, 'csm': None, 'data':  ad_ai}
-
-# %%
-
-def get_AcquisitionModel_CSM(acq_data, smoothness=100, fully_sampled=True):
-    '''Given an AcquisitionData, returns an AcquisitionModel and the CoilSensitivityData object'''
-    if fully_sampled:
-        acq_data_us = acq_data
-    else:
-        always_sampled = fully_sampled
-        us_index = []
-        for acq_idx, ky_idx in enumerate(acq_data.get_ISMRMRD_info('kspace_encode_step_1')):
-            if ky_idx in always_sampled:
-                us_index.append(acq_idx)
-        acq_data_us = acq_data.get_subset(us_index)
-
-    
-    csm = CoilSensitivityData()
-    csm.smoothness = smoothness
-    csm.calculate(acq_data_us)
-    logger.info(f"CSM set up from centre fully sampled lines")
-
-    E = AcquisitionModel(acqs=acq_data, imgs=csm)
-    E.set_coil_sensitivity_maps(csm)
-    
-    # Use the result of the inverse as our starting point
-    # logger.info(f"Creating inverse")
-    inverse = E.inverse(acq_data)
-
-    logger.info(f"Created inverse")
-
-    inverse *= 0 
-    E = AcquisitionModel(acqs=acq_data, imgs=inverse)
-    logger.info(f"Created E")
-    E.set_coil_sensitivity_maps(csm)
-
-    # cache the norm of the operator
-    import types
-    E.calculate_norm = E.norm
-    E._norm = None
-    def norm(self):
-        if self._norm is None:
-            self._norm = self.calculate_norm()
-        return self._norm
-    E.norm = types.MethodType(norm, E)
-
-    return E, csm
-
-#%%
-# Get the Coil Sensitivity Maps (CSM) from the fully sampled data
-E, csm_fs = get_AcquisitionModel_CSM(am['fs']['data'], fully_sampled=True)
-am['fs']['am'] = E
-am['fs']['csm'] = csm_fs
-#%%
-E, csm = get_AcquisitionModel_CSM(am['ai']['data'], fully_sampled=range(-13,13))
-am['ai']['am'] = E
-am['ai']['csm'] = csm
-# am['ai']['norm'] = am['ai']['am'].norm()
-
-# logger.info(f"Norm of E (AI): {am['ai']['norm']}")
-# %%
-# Undersample fully sample data with Gaussian variable density 
-
-# Create undersampled data
-def create_gaussian_variable_density_kspace_data(acq_data, acceleration_factor=3.5):
-    from stgeorges_utils import gaussian_variable_density_samples
+nits = 100
+ckhs = 1
+dpars = (nits, ckhs)
+for f in output_files:
+    logger.info(f"Processing {os.path.basename(f)}")
+    acq_data = AcquisitionData(f)
+    acq_data = preprocess_acquisition_data(acq_data)
 
     ky_index = np.unique(acq_data.get_ISMRMRD_info('kspace_encode_step_1'))
+    ky_index_max = np.max(ky_index)
+    ky_index_min = np.min(ky_index)
 
-    nky = int(np.max(ky_index)+1)
-    ky_index_gauss = gaussian_variable_density_samples([1,int(len(ky_index)/acceleration_factor)], -nky//2, nky//2-1, nky*0.8, range(-13, 13)) + nky//2
-    
-    us_index = []
-    for acq_idx, ky_idx in enumerate(acq_data.get_ISMRMRD_info('kspace_encode_step_1')):
-        if ky_idx in ky_index_gauss:
-            us_index.append(acq_idx)
-    acq_data_us = acq_data.get_subset(us_index)
 
-    return acq_data_us
+    if np.array_equal(np.arange(ky_index_min, ky_index_max + 1), ky_index):
+        # Fully sampled dataset
+        logger.info (f"Fully sampled data")
+        which = "fs"
+        am[which] = {'am': None, 'csm': None, 'data': acq_data, 'filename': os.path.basename(f)}
+        from sirf.Gadgetron import FullySampledReconstructor
+        
+        acq_data = am[which]['data']
+        
+        recon = FullySampledReconstructor()
+        recon.set_input(acq_data)
+        recon.process()
+        # store the reconstruction
+        am[which]['recon'] = recon.get_output()
+        # save_ImageData_as_nii(x_recon, prefix=which)
+        # show2D(np.squeeze(np.abs(x_recon.asarray()[11,110:410, 80:380])).T)
+        if create_undersampled_data:
+            print (f"Creating under sampled data")
+            importlib.reload(stgeorges_utils)
+            
+            acq_data_us = create_gaussian_variable_density_kspace_data(
+                am['fs']['data'],
+                acceleration_factor=acceleration_factor
+            )
+            am['us'] = {'data': acq_data_us}
+            # Get the Coil Sensitivity Maps (CSM) from the under sampled data
+            E, csm = get_AcquisitionModel_CSM(am['us']['data'], 
+                fully_sampled=range(-13,13), 
+                s_ckhs=ckhs, 
+                s_nit=nits)
+            am['us']['am'] = E
+            am['us']['csm'] = csm
+    else:
+        # sparse acquisition
+        print ("Processing AI dataset")
+        which = 'ai'
+        am[which] = {'am': None, 'csm': None, 'data':  acq_data}
+        # Get the Coil Sensitivity Maps (CSM) from the sparse (AI) data
+        E, csm = get_AcquisitionModel_CSM(am['ai']['data'], 
+                                          fully_sampled=range(-13,13),
+                                          s_ckhs=ckhs, 
+                                          s_nit=nits)
+        am[which]['am'] = E
+        am[which]['csm'] = csm
+
 #%%
-import stgeorges_utils
-import importlib
-importlib.reload(stgeorges_utils)
-from stgeorges_utils import plot_kspace_lines_memory
-acq_data_us = create_gaussian_variable_density_kspace_data(am['fs']['data'],
-                                                           acceleration_factor=4)
-am['us'] = {'data': acq_data_us}
-#%%
-plot_kspace_lines_memory([am['fs']['data'], am['ai']['data'], acq_data_us], None)
-                        #  np.max(ky_index))
-
-# %%
-# sum_us = np.sum(np.abs(acq_data_us.asarray().ravel()))
-# print(f"Sum of Undersampled data: {sum_us}")
-# acq_data_us /= sum_us
-
-E, csm = get_AcquisitionModel_CSM(acq_data_us, fully_sampled=range(-13,13))
-am['us']['am'] = E
-am['us']['csm'] = csm
-
-#%%
-# Data should be normalised now
+# DATA is not normalised. Print the sum of the absolute values of the data for each dataset to check the scale
 sum_ai = np.sqrt(np.sum(np.abs(am['ai']['data'].asarray().ravel())))
 sum_us = np.sqrt(np.sum(np.abs(am['us']['data'].asarray().ravel())))
 sum_fs = np.sqrt(np.sum(np.abs(am['fs']['data'].asarray().ravel())))
-print(f"Sum of AI data: {sum_ai}")
-print(f"Sum of Undersampled data: {sum_us}")
-print(f"Sum of Fully Sampled data: {sum_fs}")
+logger.info(f"Sum of AI data: {sum_ai}")
+logger.info(f"Sum of Undersampled data: {sum_us}")
+logger.info(f"Sum of Fully Sampled data: {sum_fs}")
 
 #%%
 from cil.optimisation.utilities.callbacks import Callback, ProgressCallback
@@ -279,12 +218,12 @@ am['us']['alpha'] = 3e-6
 
 #%%
 # Define our objective/loss function as least squares between Ex and y
-num_iterations = 10
+num_iterations = 70
 start_new = True
 from SIRFWavelets import FunctionOfAbs, SIRFWaveletOperator
 
 for k,v in am.items():
-    if k in ['fs', 'us']:
+    if k in ['fs']:
         logger.info(f"Skipping {k}")
         continue
     logger.info(f"Processing {k}")
@@ -300,13 +239,13 @@ for k,v in am.items():
     # # Tau in FISTA is 
     # tau = 0.99*2/am['us']['algo'].f.L
     # # alpha * tau ~ 2.e-5
-    alpha = 3.0e-1
-    wop = SIRFWaveletOperator(domain_geometry=x_init, level=None, wname="haar")
+
+    wop = SIRFWaveletOperator(domain_geometry=x_init, level=None, wname="db2")
     l1s = L1Sparsity(wop)
     G = alpha * FunctionOfAbs(l1s)
     
     logger.info(f"LS {f(x_init)}")
-    logger.info(f"TV {G(x_init)}")
+    logger.info(f"Regulariser {G(x_init)}")
     # add logger callback to FISTA
 
 
@@ -318,14 +257,30 @@ for k,v in am.items():
     else:
         fista = v['algo']
     # Run FISTA for least squares
-    v['callback'] = LogAll(rmse_reference=x_recon, plot=True)
+    # v['callback'] = LogAll(rmse_reference=x_init, plot=True)
 
-    fista.run(num_iterations, callbacks=[ProgressCallback()])
+    fista.run(num_iterations, callbacks=[ProgressCallback(), 
+                                        #  v['callback'], 
+                                         EarlyStoppingObjectiveValue(threshold=1e-5)])
+    
 
 
 
-
-save_ImageData_as_nii(fista.solution, prefix=am.keys()[0], output_dir='/output/nii')
+    # SAVE reconstruction to file
+    prefix = am/keys()[0]
+    save_ImageData_as_nii(fista.solution, prefix=prefix, output_dir='/output/nii')
+    import json
+    try:
+        with open(f'/output/nii/{prefix}/{prefix}-config.json', 'w') as f:
+            json.dump({'filename': v['filename'], 
+                    'iterations': fista.iterations, 
+                    'loss': fista.loss,
+                    'type': prefix,
+                    'alpha': alpha,
+                    'csm_nits': nits,
+                    'csm_ckhs': csm_ckhs}, f)
+    except Exception as e:
+        logger.error(f"Error saving config file: {e}")
 
 # Clear temp dir
 # delete proc_dir
