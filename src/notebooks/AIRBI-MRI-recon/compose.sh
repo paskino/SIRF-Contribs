@@ -18,14 +18,16 @@ case "$COMMAND" in
     exec)
         fix_symlink
         echo "Starting container to run mr_recon.sh..."
-        export START_CMD="bash mr_recon.sh"
+        docker build . --target exec
+        export TAG="executable" 
         docker compose build
         docker compose up
         ;;
     jupyter)
         fix_symlink
         echo "Starting Jupyter Notebook in the background..."
-        export START_CMD="start-notebook.py"
+        export TAG="jupyter" 
+        docker build . --target jupyter
         docker compose build
         docker compose up -d --force-recreate
         echo "Waiting for Jupyter to start..."
@@ -36,7 +38,7 @@ case "$COMMAND" in
     rebuild)
         fix_symlink
         echo "Rebuilding and starting with default exec..."
-        docker build . --no-cache
+        docker build . --target base --no-cache
         ;;
     down)
         echo "Stopping the container..."

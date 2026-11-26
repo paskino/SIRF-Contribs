@@ -94,7 +94,7 @@ for fname in input_files:
 # store all data in a dictionary
 am = {}
 #%%
-nits = 0
+nits = 100
 ckhs = 1
 dpars = (nits, ckhs)
 for f in output_files:
@@ -234,7 +234,7 @@ am['us']['alpha'] = 3e-6
 
 #%%
 # Define our objective/loss function as least squares between Ex and y
-num_iterations = 2
+num_iterations = 70
 start_new = True
 from SIRFWavelets import FunctionOfAbs, SIRFWaveletOperator
 

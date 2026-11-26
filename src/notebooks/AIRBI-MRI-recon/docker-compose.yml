@@ -1,11 +1,10 @@
 services:
   sirf-mri-recon:
     build: . # Use the Dockerfile in the current directory
-    command: ${START_CMD:-bash mr_recon.sh} # Command to run when the container starts
     container_name: stgeorges_mri_recon
     user: "1000:1000" # Set the user to match the host user (replace with your UID:GID)
     group_add: [users] 
-    image: sirf_for_xnat:executable
+    image: sirf_for_xnat:${TAG:-latest}
     ports:
       - "8888:8888"
     volumes:
