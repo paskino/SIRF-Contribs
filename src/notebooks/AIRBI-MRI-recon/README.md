@@ -1,29 +1,24 @@
-## St Georges Pipeline
+# St Georges Pipeline
 
-### On a running docker container
+## Creation of Docker image
 
-```
-docker exec sirf-jupyter bash -lc 'source /opt/SIRF-SuperBuild/INSTALL/bin/env_sirf.sh && cd work/SIRF-Contribs/src/notebooks/AIRBI-MRI-recon && python stgeorges_pipeline.py '
-```
+The `compose.sh` script enables users to create a docker container either to be launched by XNAT to process all files in the `/input` directory and save into `/output` or as development container.
 
-Copy the DICOM files
-```
-scp -r ubuntu@172.16.111.141:workdir/data/recon ~/Data/Emily/
-```
+| Option | Description |
+| :--- | :--- |
+| `exec` (default) | Builds the `exec` target image, starts the container, and runs `bash mr_recon.sh` in the foreground. |
+| `exec-build` | Builds the `exec` executable image and stops (doesn't start the container with `docker compose up`). This image should be used by XNAT|
+| `jupyter` | Builds the `jupyter` target image, starts Jupyter Notebook in the background, and prints the URL to access it. |
+| `rebuild` | Force rebuilds the `base` image target without using the Docker cache (`--no-cache`). |
+| `down` | Stops and removes the running containers, networks, and volumes by running `docker compose down`. |
 
-### As executable
 
-A command to execute is defined in the `docker-compose.yml` at the with the `command` keyword.
-To run the container as executable it should contain `command: ["bash", "mr_recon.sh"]`. If running a container with jupyter the `command` line should be commented out.  
 
-```
-docker build . --no-cache
-docker compose build
-docker compose up
-```
+## Development on a running docker container
 
-Make sure that `/input` and `/output` are bound to the container as this is where the script expects to find files
+With VSCode install:
+- Dev Containers
+- Jupyter
+- Remote - SSH (optional)
 
-The `build` context: The `.` tells Docker Compose that the "build context" is the current directory (the same folder where the `docker-compose.yml` lives).
-The default filename: By default, when you specify a build context, Docker Compose automatically looks for a file named exactly `Dockerfile` inside that directory.
-The image tag: `sirf_for_xnat:latest`, Docker Compose won't try to download this image from the internet. Instead, it will build the image using your local `Dockerfile` and then name (tag) the resulting image `sirf_for_xnat:latest`.
+Start the image with `./compose.sh jupyter` and then attach to the running container.
