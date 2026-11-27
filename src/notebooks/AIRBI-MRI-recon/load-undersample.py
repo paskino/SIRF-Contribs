@@ -532,15 +532,15 @@ print(f"Sum of Fully Sampled data: {sum_fs}")
 #%%
 # SAVE reconstruction to file
 
-save_ImageData_as_nii(am['ai']['algo'].solution, 'ai', output_dir='/output/nii')
-save_ImageData_as_nii(am['fs']['recon'], 'fs', output_dir='/output/nii')
+save_ImageData_as_nii(am['ai']['algo'].solution, output_dir='/output/nii/ai')
+save_ImageData_as_nii(am['fs']['recon'], output_dir='/output/nii/fs')
 
 #%%
 # DEBUG 
 E = am['ai']['am']
 acq_data = am['ai']['data']
 x_init = E.inverse(acq_data)
-save_ImageData_as_nii(x_init, 'inverse',  output_dir='/output/nii')
+save_ImageData_as_nii(x_init, output_dir='/output/nii/inverse')
 # %%
 # Clear temp dir
 # delete proc_dir

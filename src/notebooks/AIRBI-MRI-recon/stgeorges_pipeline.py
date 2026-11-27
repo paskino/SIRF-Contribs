@@ -121,8 +121,26 @@ for f in output_files:
         recon.process()
         # store the reconstruction
         am[which]['recon'] = recon.get_output()
-        save_ImageData_as_nii(am[which]['recon'], prefix=which, output_dir='/output/nii')
-        am[which]['recon'].write(f'/output/nii/{which}/{which}-recon.h5')
+        import uuid
+        unique_id = uuid.uuid4().hex  # Generates a random 32-character string
+        prefix = f"recon_{unique_id}"
+        unique_dir = os.path.join('/output/nii', prefix)
+        os.makedirs(unique_dir, exist_ok=True)
+        save_ImageData_as_nii(am[which]['recon'], output_dir=unique_dir)
+        #####################################################################################
+        # convert to DICOM using nii2dcm
+        out = subprocess.run(
+            ["nii2dcm", "-d", "MR", os.path.join(unique_dir, "solution.nii"), unique_dir],
+            capture_output=False,
+            text=False,
+        )
+        
+        logger.info(out.stdout)
+        logger.error(out.stderr)
+        if os.path.exists(os.path.join(unique_dir, "solution.nii")):
+            os.remove(os.path.join(unique_dir, "solution.nii"))
+        #####################################################################################
+        am[which]['recon'].write(f'{unique_dir}/recon.h5')
         # show2D(np.squeeze(np.abs(x_recon.asarray()[11,110:410, 80:380])).T)
         if create_undersampled_data:
             print (f"Creating under sampled data")
@@ -228,15 +246,14 @@ am['us']['alpha'] = 8.5e-6
 
 # Wavelet sparsity regularisation
 am['fs']['alpha'] = 8.5e-06
-am['ai']['alpha'] = 7
-e-1
+am['ai']['alpha'] = 7e-1
 am['us']['alpha'] = 3e-6
 am['us']['alpha'] = 1e-6 # db2
-
+wname = "db2"
 
 #%%
 # Define our objective/loss function as least squares between Ex and y
-num_iterations = 70
+num_iterations = 100
 start_new = True
 from SIRFWavelets import FunctionOfAbs, SIRFWaveletOperator
 
@@ -258,7 +275,7 @@ for k,v in am.items():
     # tau = 0.99*2/am['us']['algo'].f.L
     # # alpha * tau ~ 2.e-5
 
-    wop = SIRFWaveletOperator(domain_geometry=x_init, level=None, wname="db2")
+    wop = SIRFWaveletOperator(domain_geometry=x_init, level=None, wname=wname)
     l1s = L1Sparsity(wop)
     G = alpha * FunctionOfAbs(l1s)
     
@@ -285,19 +302,42 @@ for k,v in am.items():
 
 
     # SAVE reconstruction to file
-    prefix = k
-    save_ImageData_as_nii(fista.solution, prefix=prefix, output_dir='/output/nii')
-    fista.solution.write(f'/output/nii/{prefix}/{prefix}-solution.h5')
+    import uuid
+    unique_id = uuid.uuid4().hex  # Generates a random 32-character string
+    prefix = f"recon_{unique_id}"
+    unique_dir = os.path.join('/output/nii', prefix)
+    os.makedirs(unique_dir, exist_ok=True)
+    
+    save_ImageData_as_nii(fista.solution, output_dir=unique_dir)
+    fista.solution.write(f'{unique_dir}/solution.h5')
+
+    # save solution as DICOM
+    # self.ds.ProtocolName = "nii2dcm_DICOM"
+    # -d MR $i $(dirname $i)
+    # Convert to DICOM using nii2dcm
+    out = subprocess.run(
+        ["nii2dcm", "-d", "MR", os.path.join(unique_dir, "solution.nii"), unique_dir],
+        capture_output=False,
+        text=False,
+    )
+    
+    logger.info(out.stdout)
+    logger.error(out.stderr)
+    if os.path.exists(os.path.join(unique_dir, "solution.nii")):
+        os.remove(os.path.join(unique_dir, "solution.nii"))
+
     import json
     try:
-        with open(f'/output/nii/{prefix}/{prefix}-config.json', 'w') as f:
+        with open(f'{unique_dir}/config.json', 'w') as f:
             json.dump({'filename': v['filename'], 
                     'iterations': fista.iterations, 
                     'loss': fista.loss,
-                    'type': prefix,
+                    'type': k,
                     'alpha': alpha,
+                    'wname': wname,
                     'csm_nits': nits,
-                    'csm_ckhs': ckhs}, f)
+                    'csm_ckhs': ckhs,
+                    'k_space_encode_step_1': [str(el) for el in acq_data.get_ISMRMRD_info('kspace_encode_step_1')]}, f)
     except Exception as e:
         logger.error(f"Error saving config file: {e}")
 

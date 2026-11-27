@@ -330,7 +330,7 @@ def get_AcquisitionModel_CSM(acq_data, fully_sampled=None, smoothness=100, s_nit
     return E, csm
 
 #%%
-def save_ImageData_as_nii(recon, prefix, output_dir='/output/nii'):
+def save_ImageData_as_nii(recon, output_dir='/output/nii'):
     from sirf.Reg import NiftiImageData3D
     from sirf.Gadgetron import ImageData
 
@@ -339,9 +339,9 @@ def save_ImageData_as_nii(recon, prefix, output_dir='/output/nii'):
     pixel_data = pixel_data / pixel_data.max() * np.iinfo(np.uint16).max
 
     niisolution = NiftiImageData3D(pixel_data)
-    savedir = os.path.join(output_dir, prefix)
-    os.makedirs(savedir, exist_ok=True)
-    ofname = os.path.join(savedir, f'{prefix}-solution.nii')
+
+    os.makedirs(output_dir, exist_ok=True)
+    ofname = os.path.join(output_dir, f'solution.nii')
     niisolution.write(ofname)
     logger.info(f"Solution written to {ofname} {os.path.exists(ofname)}")
 

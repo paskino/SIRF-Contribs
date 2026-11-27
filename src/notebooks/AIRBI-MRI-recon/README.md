@@ -15,6 +15,7 @@ The `compose.sh` script enables users to create a docker container either to be 
 > [!NOTE]
 > Due to https://github.com/SyneRBI/SIRF-SuperBuild/issues/1049 it is necessary to delete a symlink that is created when the container starts and it's not removed at stop.
 > The location of the symbolic link can be set by the SYMLINK_PATH environment variable.
+> The location of the symbolic link is determined by the volume bound on the container to `/home/jovyan/work`
 
 Basic usage:
 ```
