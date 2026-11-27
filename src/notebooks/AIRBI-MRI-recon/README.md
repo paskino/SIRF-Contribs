@@ -21,6 +21,9 @@ Basic usage:
 SYMLINK_PATH="/path/to/my/symlink" ./compose.sh [option]
 ```
 
+> [!NOTE]
+> Users should update the `/input` and `/output` bound volume locations in `docker-compose.yml` to match their configuration.
+
 ## Development on a running docker container
 
 With VSCode install:
