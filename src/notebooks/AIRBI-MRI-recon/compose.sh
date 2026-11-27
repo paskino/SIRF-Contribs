@@ -11,6 +11,15 @@ fix_symlink() {
     fi
 }
 
+exec_build() {
+    fix_symlink
+    echo "Building container to run mr_recon.sh..."
+    export TARGET="exec"
+    docker build . --target exec
+    export TAG="executable" 
+    docker compose build
+}
+
 # Set the default option to 'exec' if no argument is passed
 COMMAND=${1:-exec}
 
@@ -18,15 +27,17 @@ case "$COMMAND" in
     exec)
         fix_symlink
         echo "Starting container to run mr_recon.sh..."
-        docker build . --target exec
-        export TAG="executable" 
-        docker compose build
+        exec_build
         docker compose up
+        ;;
+    exec-build)
+        exec_build
         ;;
     jupyter)
         fix_symlink
         echo "Starting Jupyter Notebook in the background..."
-        export TAG="jupyter" 
+        export TAG="jupyter"
+        export TARGET="jupyter"
         docker build . --target jupyter
         docker compose build
         docker compose up -d --force-recreate
@@ -45,8 +56,9 @@ case "$COMMAND" in
         docker compose down
         ;;
     *)
-        echo "Usage: $0 {exec|jupyter|rebuild|down}"
+        echo "Usage: $0 {exec|exec-build|jupyter|rebuild|down}"
         echo "  exec    (default) Runs bash mr_recon.sh in the foreground"
+        echo "  exec-build Builds the executable image and starts the container"
         echo "  jupyter Starts Jupyter Notebook in the background and prints the URL"
         exit 1
         ;;

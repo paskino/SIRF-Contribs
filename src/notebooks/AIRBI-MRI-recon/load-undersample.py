@@ -14,6 +14,8 @@ from stgeorges_utils import change_ismrmrd, to_dicom_folder, LogfileCallback
 from stgeorges_utils import plot_kspace_lines_memory
 from stgeorges_utils import rmse
 from stgeorges_utils import plot_kspace_lines_memory
+from stgeorges_utils import get_AcquisitionModel_CSM
+from stgeorges_utils import create_gaussian_variable_density_kspace_data
 
 # SIRF
 from sirf.Gadgetron import AcquisitionData, ImageData
@@ -38,102 +40,6 @@ from cil.optimisation.functions import L1Sparsity
 from cil.optimisation.operators import WaveletOperator
 
 
-# from AbsFunction import FunctionOfAbs
-# %%
-# import pysnooper
-# @pysnooper.snoop()
-def get_AcquisitionModel_CSM(acq_data, fully_sampled=None, smoothness=100, s_nit=0, s_ckhs=1):
-    '''Given an AcquisitionData, returns an AcquisitionModel and the CoilSensitivityData object
-    
-    Parameters:
-    -----------
-    acq_data: AcquisitionData
-    fully_sampled: None or list/tuple of ints, default None.
-        If specified, the integers in the list should specify a contiguous range of acquisition
-        k-space lines that are fully sampled
-    s_nit: int positive, default 0. Number of smoothing iterations to suppress noise
-    s_khs: int, default 1. Convolution kernel half size 
-    '''
-    if fully_sampled is None:
-        acq_data_us = acq_data
-    else:
-        always_sampled = fully_sampled
-        centre_line = int((max(acq_data.get_ISMRMRD_info('kspace_encode_step_1')) + \
-                       min(acq_data.get_ISMRMRD_info('kspace_encode_step_1'))) // 2 )
-        always_sampled = [el + centre_line for el in fully_sampled]
-        us_index = []
-        for acq_idx, ky_idx in enumerate(acq_data.get_ISMRMRD_info('kspace_encode_step_1')):
-            if ky_idx in always_sampled:
-                us_index.append(acq_idx)
-        acq_data_us = acq_data.get_subset(us_index)
-        logger.info(f"CSM set up from centre fully sampled lines")
-
-
-    
-    csm = CoilSensitivityData()
-    csm.smoothing_iterations = s_nit
-    csm.conv_kernel_halfsize = s_ckhs
-    logger.info(f"smoothing iterations {csm.smoothing_iterations}")
-    logger.info(f"convolution kernel half size {csm.conv_kernel_halfsize}")
-    csm.calculate(acq_data_us)
-    
-    E = AcquisitionModel(acqs=acq_data, imgs=csm)
-    E.set_coil_sensitivity_maps(csm)
-    
-    # Use the result of the inverse as our starting point
-    # logger.info(f"Creating inverse")
-    inverse = E.inverse(acq_data)
-
-    logger.info(f"Created inverse")
-
-    inverse *= 0 
-    E = AcquisitionModel(acqs=acq_data, imgs=inverse)
-    logger.info(f"Created E")
-    E.set_coil_sensitivity_maps(csm)
-
-    # cache the norm of the operator
-    import types
-    E.calculate_norm = E.norm
-    E._norm = None
-    def norm(self):
-        if self._norm is None:
-            self._norm = self.calculate_norm()
-        return self._norm
-    E.norm = types.MethodType(norm, E)
-
-    return E, csm
-
-#%%
-def save_ImageData_as_nii(recon, prefix, output_dir='/output/nii'):
-    from sirf.Reg import NiftiImageData3D
-    from sirf.Gadgetron import ImageData
-
-    # cast to int16 range
-    pixel_data = recon.abs()
-    pixel_data = pixel_data / pixel_data.max() * np.iinfo(np.uint16).max
-
-    niisolution = NiftiImageData3D(pixel_data)
-    os.makedirs(os.path.join(output_dir, prefix), exist_ok=True)
-    ofname = f'/output/nii/{prefix}/{prefix}-solution.nii'
-    niisolution.write(ofname)
-    print(f"Solution written to {ofname} {os.path.exists(ofname)}")
-
-# Create undersampled data
-def create_gaussian_variable_density_kspace_data(acq_data, acceleration_factor=3.5):
-    from stgeorges_utils import gaussian_variable_density_samples
-
-    ky_index = np.unique(acq_data.get_ISMRMRD_info('kspace_encode_step_1'))
-
-    nky = int(np.max(ky_index)+1)
-    ky_index_gauss = gaussian_variable_density_samples([1,int(len(ky_index)/acceleration_factor)], -nky//2, nky//2-1, nky*0.8, range(-13, 13)) + nky//2
-    
-    us_index = []
-    for acq_idx, ky_idx in enumerate(acq_data.get_ISMRMRD_info('kspace_encode_step_1')):
-        if ky_idx in ky_index_gauss:
-            us_index.append(acq_idx)
-    acq_data_us = acq_data.get_subset(us_index)
-
-    return acq_data_us
 
 #%%
 

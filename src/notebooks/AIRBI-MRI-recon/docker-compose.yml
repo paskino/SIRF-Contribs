@@ -1,6 +1,8 @@
 services:
   sirf-mri-recon:
-    build: . # Use the Dockerfile in the current directory
+    build:
+      context: .
+      target: ${TARGET:-exec}
     container_name: stgeorges_mri_recon
     user: "1000:1000" # Set the user to match the host user (replace with your UID:GID)
     group_add: [users] 

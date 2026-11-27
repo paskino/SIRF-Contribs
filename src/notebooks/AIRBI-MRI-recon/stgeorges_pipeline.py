@@ -228,8 +228,10 @@ am['us']['alpha'] = 8.5e-6
 
 # Wavelet sparsity regularisation
 am['fs']['alpha'] = 8.5e-06
-am['ai']['alpha'] = 3e-1
+am['ai']['alpha'] = 7
+e-1
 am['us']['alpha'] = 3e-6
+am['us']['alpha'] = 1e-6 # db2
 
 
 #%%
