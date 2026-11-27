@@ -2,7 +2,7 @@
 
 # Define the path to the problematic symlink on your host machine
 # (Update this to the actual path if needed)
-SYMLINK_PATH="/home/ubuntu/devel/SIRF-contrib"
+SYMLINK_PATH="${SYMLINK_PATH:-/home/ubuntu/devel/SIRF-contrib}"
 
 fix_symlink() {
     if [ -L "$SYMLINK_PATH" ]; then
